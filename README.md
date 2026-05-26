@@ -4,6 +4,11 @@ A 2D physics chaos game where the player flings memorable objects into fragile e
 
 The first playable pack is **Garage Band**: guitars, bass amps, cymbals, mic stands, fog machines, cheap garage props, bad adult decisions, and clean non-offensive humor.
 
+The game now opens on a real title menu with two playable modes:
+
+- **Wreck Room**: the original one-throw garage destruction mode.
+- **Damage Rush**: a side-scrolling arcade mode where valuable props roll in from the right while the player launches band gear from the left to clear them before they escape offscreen.
+
 ## V1 target
 
 V1 is not a full game. V1 is a playable proof that the core mechanic is fun on repeat.
@@ -11,12 +16,21 @@ V1 is not a full game. V1 is a playable proof that the core mechanic is fun on r
 The player should be able to:
 
 - Open the game in a browser.
+- Choose Wreck Room or Damage Rush from the main menu.
 - Pick one of five band-related objects.
 - Pull back from the launcher and fling the object into the garage.
 - Watch objects bounce, break, scatter, and trigger funny scoring events.
 - See damage totals, combo bonuses, cash, fans, and chaos update.
 - Buy simple upgrades that make the next throw more destructive.
 - Replay the same room and still get different outcomes because physics, break thresholds, bounce, spin, and upgrade values shift the result.
+
+Damage Rush adds a longer arcade loop:
+
+- Incoming props spawn in lanes and move left.
+- Gear reloads between launches.
+- Props cleared by Matter collisions award score, cash, fans, combo credit, and feed events.
+- Props count as escapes only after they leave the left side of the screen.
+- The round ends when the timer reaches zero or five props escape, then shows a replay/menu summary.
 
 ## Tech stack
 
@@ -103,7 +117,10 @@ Key files:
 
 ```txt
 src/game/PropertyDamageScene.ts   Phaser + Matter physics scene
+src/game/DamageRushScene.ts       Side-scrolling arcade physics mode
+src/game/createGame.ts            Phaser boot and mode scene routing
 src/store/gameStore.ts            Zustand economy/progression state
+src/ui/MainMenu.tsx               Title menu and mode selection
 src/ui/GearSelector.tsx           Object picker
 src/ui/UpgradePanel.tsx           Upgrade shop
 src/ui/ScorePanel.tsx             HUD stats

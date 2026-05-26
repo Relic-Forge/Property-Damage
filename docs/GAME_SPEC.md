@@ -10,6 +10,17 @@ The game is a **chaos generator**, not a precision puzzle.
 
 The player should feel smart when they cause a chain reaction, but the game should also produce unexpected outcomes that make them laugh.
 
+## Modes
+
+Property Damage starts at a title menu with two modes.
+
+| Mode | Loop | End condition |
+|---|---|---|
+| Wreck Room | One launch into a fragile room, then a damage report when physics settle. | The launched gear and room debris settle or time out. |
+| Damage Rush | Repeated launches from the left against incoming props moving in from the right. | 90 seconds expire or five props escape fully offscreen left. |
+
+The menu is React UI over a dimmed, blurred game-world background. Selecting a mode plays a short synthesized menu sound, locks the selected button, fades the menu, and boots or reveals the selected Phaser scene.
+
 ## V1 pack
 
 **Garage Band Pack**
@@ -65,6 +76,53 @@ V1 controls stay dead simple.
 8. Round settles once physics stop moving.
 9. Damage report pays cash/fans/chaos.
 10. Player buys upgrades and repeats.
+
+## Damage Rush mode
+
+Damage Rush is the arcade mode. It keeps the same gear selection and drag/release launch input, but changes the target layout and pacing.
+
+### Arcade layout
+
+- Launcher and thrower stay on the left side.
+- Incoming props spawn offscreen right, use Matter bodies, and move left through five lanes.
+- Props remain playable until they leave the screen on the left.
+- The player repeatedly launches gear, then waits through a short reload before launching again.
+
+### Incoming props
+
+The current pass includes at least eight prop types:
+
+| Prop | Scoring role |
+|---|---|
+| Questionable Cake | Wobbly party target with strong value. |
+| Old TV | Heavy electronics target. |
+| Neon Sign | Fast, fragile, high-value target. |
+| Folding Table | Unstable medium target. |
+| Garage Shelf | Heavy high-value target. |
+| Mystery Box | Mid-sized wood target. |
+| Speaker Stack | Tall, top-heavy electronics target. |
+| Paint Can | Small, fragile, very high-value target. |
+
+### Pacing
+
+Damage Rush uses timer-based phases:
+
+- Warmup, 0-20 seconds: slower spawns and readable targets.
+- Rush, 20-55 seconds: medium spawns and more variety.
+- Damage Storm, 55-90 seconds: faster mixed spawns.
+
+### Scoring
+
+Damage Rush tracks:
+
+- Score/damage.
+- Combo and best combo.
+- Props cleared.
+- Escapes.
+- Best single impact.
+- Cash and fans earned.
+
+Collision damage uses Matter impact speed, gear multiplier, target fragility, and upgrade bonuses. Cleared props spawn debris, feed lines, floating score labels, and camera shake. Props that leave the left side of the screen while still active increment escapes and are removed.
 
 ## Scoring model
 

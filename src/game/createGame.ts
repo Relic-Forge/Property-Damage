@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
 import { PropertyDamageScene } from './PropertyDamageScene';
+import { DamageRushScene } from './DamageRushScene';
+import { StartMode } from './modes';
 
-export function createPropertyDamageGame(parent: HTMLElement) {
+export function createPropertyDamageGame(parent: HTMLElement, startMode: StartMode = 'wreckRoom') {
   return new Phaser.Game({
     type: Phaser.AUTO,
     parent,
@@ -20,6 +22,13 @@ export function createPropertyDamageGame(parent: HTMLElement) {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH
     },
-    scene: [PropertyDamageScene]
+    scene: [],
+    callbacks: {
+      postBoot: (game) => {
+        game.scene.add('PropertyDamageScene', PropertyDamageScene, false);
+        game.scene.add('DamageRushScene', DamageRushScene, false);
+        game.scene.start(startMode === 'damageRush' ? 'DamageRushScene' : 'PropertyDamageScene');
+      }
+    }
   });
 }

@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { GearType, useGameStore } from '../store/gameStore';
 
-type GearMenuItem = {
+export type GearMenuItem = {
   key: GearType;
   label: string;
   effect: string;
@@ -9,12 +9,12 @@ type GearMenuItem = {
   image: string;
 };
 
-const gear: GearMenuItem[] = [
+export const gear: GearMenuItem[] = [
   {
     key: 'guitar',
     label: 'Guitar',
     effect: 'Riff Ricochet',
-    note: 'spinny chaos with a questionable solo',
+    note: 'spinny trouble with a questionable solo',
     image: '/assets/garage-band/guitar-v1.png'
   },
   {
@@ -53,7 +53,15 @@ export function GearSelector() {
   const selectGear = useGameStore((state) => state.selectGear);
   const roundState = useGameStore((state) => state.roundState);
   const currentGear = gear.find((item) => item.key === selectedGear) ?? gear[0];
-  const isLocked = roundState === 'launched' || roundState === 'settling';
+  const isLocked = roundState !== 'ready';
+
+  useEffect(() => {
+    const toggle = () => {
+      if (!isLocked) setIsOpen((open) => !open);
+    };
+    window.addEventListener('pd:toggle-weapons', toggle);
+    return () => window.removeEventListener('pd:toggle-weapons', toggle);
+  }, [isLocked]);
 
   return (
     <section className={`stage-menu weapon-menu ${isOpen ? 'is-open' : 'is-collapsed'}`}>
@@ -63,7 +71,7 @@ export function GearSelector() {
           <small>{isLocked ? 'wait for the ringing to stop' : 'pick the next bad idea'}</small>
         </div>
         <div className="weapon-list">
-          {gear.map((item) => (
+          {gear.map((item, index) => (
             <button
               type="button"
               key={item.key}
@@ -78,7 +86,7 @@ export function GearSelector() {
                 <img src={item.image} alt="" />
               </span>
               <span className="weapon-copy">
-                <strong>{item.label}</strong>
+                <strong>{index + 1}. {item.label}</strong>
                 <em>{item.effect}</em>
                 <small>{item.note}</small>
               </span>
@@ -98,17 +106,10 @@ export function GearSelector() {
             <img src={currentGear.image} alt="" />
           </span>
           <span className="trigger-copy">
-            <span>Fling Object</span>
+            <span>Objects <kbd>W</kbd></span>
             <strong>{currentGear.label}</strong>
-            <small>{currentGear.effect}</small>
+            <small>1-5 select · {currentGear.effect}</small>
           </span>
-        </button>
-        <button
-          type="button"
-          className="tiny-button"
-          onClick={() => window.dispatchEvent(new Event('pd:reset-level'))}
-        >
-          Reset room
         </button>
       </div>
     </section>

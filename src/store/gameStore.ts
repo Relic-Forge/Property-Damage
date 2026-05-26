@@ -1,15 +1,22 @@
 import { create } from 'zustand';
 
 export type GearType = 'guitar' | 'amp' | 'cymbal' | 'micStand' | 'fogMachine';
-export type RoundState = 'ready' | 'launched' | 'settling' | 'summary';
+export type RoundState = 'selecting' | 'countdown' | 'ready' | 'launched' | 'settling' | 'summary';
 
 export type RoundSummary = {
+  mode?: 'wreckRoom' | 'damageRush';
   totalDamage: number;
   chaos: number;
   combo: number;
   fans: number;
   title: string;
   bonuses: string[];
+  bestCombo?: number;
+  cleared?: number;
+  escapes?: number;
+  cashEarned?: number;
+  fansEarned?: number;
+  verdict?: string;
 };
 
 type UpgradeKey = 'launchPower' | 'gearWeight' | 'fragility' | 'viralChance' | 'insuranceMultiplier';
@@ -52,7 +59,7 @@ export const getUpgradeCost = (key: UpgradeKey, level: number) => upgradeCosts[k
 
 export const useGameStore = create<GameStore>((set, get) => ({
   selectedGear: 'guitar',
-  roundState: 'ready',
+  roundState: 'selecting',
   liveDamage: 0,
   liveChaos: 0,
   liveCombo: 0,
@@ -118,7 +125,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   resetRun: () =>
     set({
-      roundState: 'ready',
+      roundState: 'selecting',
       liveDamage: 0,
       liveChaos: 0,
       liveCombo: 0,

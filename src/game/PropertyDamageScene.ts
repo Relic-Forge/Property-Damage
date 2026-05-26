@@ -71,6 +71,13 @@ const GEAR: Record<GearType, GearConfig> = {
 const MAX_PULL_DISTANCE = 380;
 const LAUNCH_VELOCITY_DIVISOR = 11.5;
 const PERFORMER_SCALE = 0.42;
+const AIM_THEME = {
+  shadow: 0x19161f,
+  warm: 0xffe17d,
+  hot: 0xff5c8a,
+  cool: 0x5de0e6,
+  cream: 0xfff7c2
+};
 const GEAR_VARIANTS = [1, 2, 3] as const;
 const WORLD_WIDTH = 1700;
 const WORLD_HEIGHT = 960;
@@ -130,6 +137,7 @@ export class PropertyDamageScene extends Phaser.Scene {
     fogMachine: 1
   };
   private isDragging = false;
+  private dragAnchor: Phaser.Math.Vector2 | null = null;
   private activeGear: Phaser.Physics.Matter.Sprite | null = null;
   private breakables: Phaser.Physics.Matter.Image[] = [];
   private debris: Phaser.Physics.Matter.Image[] = [];
@@ -144,7 +152,7 @@ export class PropertyDamageScene extends Phaser.Scene {
   private resetHandler = () => this.resetLevel();
   private stagePointerHandler = (event: Event) => {
     const detail = (event as CustomEvent<{ type: 'down' | 'move' | 'up'; x: number; y: number }>).detail;
-    if (!detail) return;
+    if (!detail || !this.cameras?.main) return;
     const point = this.clampPointerPoint(this.cameras.main.getWorldPoint(detail.x, detail.y));
     if (detail.type === 'down') this.beginDrag(point);
     if (detail.type === 'move') this.moveDrag(point);
@@ -155,7 +163,6 @@ export class PropertyDamageScene extends Phaser.Scene {
       event.preventDefault();
       this.quickLaunch();
     }
-    if (event.code === 'KeyR') this.resetLevel();
   };
 
   constructor() {
@@ -163,28 +170,36 @@ export class PropertyDamageScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image('garage-background', '/assets/garage-band/backgrounds/garage_background.png');
-    this.load.svg('debris-wood-1', '/assets/garage-band/debris/wood_chunk_01.svg', { width: 48, height: 38 });
-    this.load.svg('debris-wood-2', '/assets/garage-band/debris/wood_chunk_02.svg', { width: 52, height: 34 });
-    this.load.svg('debris-glass-1', '/assets/garage-band/debris/glass_chunk_01.svg', { width: 44, height: 40 });
-    this.load.svg('debris-metal-1', '/assets/garage-band/debris/metal_chunk_01.svg', { width: 50, height: 36 });
-    this.load.svg('debris-fabric-1', '/assets/garage-band/debris/fabric_scrap_01.svg', { width: 54, height: 38 });
-    this.load.svg('effect-impact-star', '/assets/garage-band/effects/impact_star.svg', { width: 92, height: 92 });
-    this.load.svg('effect-dust-puff', '/assets/garage-band/effects/dust_puff.svg', { width: 84, height: 84 });
-    this.load.svg('effect-spark', '/assets/garage-band/effects/spark_01.svg', { width: 64, height: 64 });
-    this.load.svg('effect-smoke-puff', '/assets/garage-band/effects/smoke_puff.svg', { width: 96, height: 96 });
+    this.loadImageOnce('garage-background', '/assets/garage-band/backgrounds/garage_background.png');
+    this.loadSvgOnce('debris-wood-1', '/assets/garage-band/debris/wood_chunk_01.svg', { width: 48, height: 38 });
+    this.loadSvgOnce('debris-wood-2', '/assets/garage-band/debris/wood_chunk_02.svg', { width: 52, height: 34 });
+    this.loadSvgOnce('debris-glass-1', '/assets/garage-band/debris/glass_chunk_01.svg', { width: 44, height: 40 });
+    this.loadSvgOnce('debris-metal-1', '/assets/garage-band/debris/metal_chunk_01.svg', { width: 50, height: 36 });
+    this.loadSvgOnce('debris-fabric-1', '/assets/garage-band/debris/fabric_scrap_01.svg', { width: 54, height: 38 });
+    this.loadSvgOnce('effect-impact-star', '/assets/garage-band/effects/impact_star.svg', { width: 92, height: 92 });
+    this.loadSvgOnce('effect-dust-puff', '/assets/garage-band/effects/dust_puff.svg', { width: 84, height: 84 });
+    this.loadSvgOnce('effect-spark', '/assets/garage-band/effects/spark_01.svg', { width: 64, height: 64 });
+    this.loadSvgOnce('effect-smoke-puff', '/assets/garage-band/effects/smoke_puff.svg', { width: 96, height: 96 });
     LEVEL_PROPS.forEach((prop) => {
-      this.load.image(prop.key, prop.path);
+      this.loadImageOnce(prop.key, prop.path);
     });
 
     Object.keys(GEAR).forEach((key) => {
       GEAR_VARIANTS.forEach((variant) => {
-        this.load.image(`gear-${key}-${variant}`, `/assets/garage-band/${key}-v${variant}.png`);
+        this.loadImageOnce(`gear-${key}-${variant}`, `/assets/garage-band/${key}-v${variant}.png`);
       });
     });
     (['idle', 'pull', 'throw', 'recover'] as PerformerPose[]).forEach((pose) => {
-      this.load.image(`performer-${pose}`, `/assets/thrower-${pose}.png`);
+      this.loadImageOnce(`performer-${pose}`, `/assets/thrower-${pose}.png`);
     });
+  }
+
+  private loadImageOnce(key: string, path: string) {
+    if (!this.textures.exists(key)) this.load.image(key, path);
+  }
+
+  private loadSvgOnce(key: string, path: string, config: Phaser.Types.Loader.FileTypes.SVGSizeConfig) {
+    if (!this.textures.exists(key)) this.load.svg(key, path, config);
   }
 
   create() {
@@ -235,56 +250,63 @@ export class PropertyDamageScene extends Phaser.Scene {
 
   private setupInput() {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      this.beginDrag(this.getPointerPoint(pointer));
+      const point = this.getPointerPoint(pointer);
+      if (point) this.beginDrag(point);
     });
 
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      this.moveDrag(this.getPointerPoint(pointer));
+      const point = this.getPointerPoint(pointer);
+      if (point) this.moveDrag(point);
     });
 
     this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-      this.endDrag(this.getPointerPoint(pointer));
+      const point = this.getPointerPoint(pointer);
+      if (point) this.endDrag(point);
     });
   }
 
   private getPointerPoint(pointer: Phaser.Input.Pointer) {
+    if (!this.cameras?.main) return null;
     const point = pointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
     return this.clampPointerPoint(point);
   }
 
   private clampPointerPoint(point: Phaser.Math.Vector2) {
     return new Phaser.Math.Vector2(
-      Phaser.Math.Clamp(point.x, -120, 520),
-      Phaser.Math.Clamp(point.y, 360, 930)
+      Phaser.Math.Clamp(point.x, 0, WORLD_WIDTH),
+      Phaser.Math.Clamp(point.y, 0, WORLD_HEIGHT)
     );
   }
 
   private beginDrag(point: Phaser.Math.Vector2) {
     const state = useGameStore.getState().roundState;
-    if (state === 'summary') this.resetLevel(false);
+    if (state === 'summary') {
+      this.resetLevel(true);
+      return;
+    }
     if (useGameStore.getState().roundState !== 'ready') return;
-    const inLaunchZone = point.x < 405 && point.y > 300;
-    const nearLauncher = Phaser.Math.Distance.Between(point.x, point.y, this.launcher.x, this.launcher.y) < 300;
-    if (!inLaunchZone && !nearLauncher) return;
     this.isDragging = true;
+    this.dragAnchor = point.clone();
     this.setPerformerPose('pull');
     this.updateReadyGearPreview();
-    this.positionHeldGear(point, 1);
+    this.positionHeldGearForCharge(0, 1);
     this.drawAim(point);
   }
 
   private moveDrag(point: Phaser.Math.Vector2) {
     if (!this.isDragging) return;
-    this.positionHeldGear(point, 1);
+    const pull = this.getDragPull(point);
+    this.positionHeldGearForCharge(pull.length() / MAX_PULL_DISTANCE, 1);
     this.drawAim(point);
   }
 
   private endDrag(point: Phaser.Math.Vector2) {
     if (!this.isDragging) return;
     this.isDragging = false;
+    const pull = this.getDragPull(point);
+    this.dragAnchor = null;
     this.aimLine.clear();
 
-    const pull = new Phaser.Math.Vector2(this.launcher.x - point.x, this.launcher.y - point.y);
     if (pull.length() < 20) {
       this.setPerformerPose('idle');
       this.updateReadyGearPreview();
@@ -296,18 +318,36 @@ export class PropertyDamageScene extends Phaser.Scene {
 
   private drawAim(point: Phaser.Math.Vector2) {
     this.aimLine.clear();
-    this.aimLine.lineStyle(4, 0xffe17d, 0.72);
-    this.aimLine.lineBetween(this.launcher.x - 18, this.launcher.y - 70, point.x, point.y);
-    this.aimLine.lineBetween(this.launcher.x + 20, this.launcher.y - 74, point.x, point.y);
+    const pull = this.getDragPull(point);
+    const charge = Phaser.Math.Clamp(pull.length() / MAX_PULL_DISTANCE, 0, 1);
+    const hand = this.getHeldGearPoint('pull');
+    const lineAlpha = Phaser.Math.Linear(0.42, 0.86, charge);
 
-    const pull = new Phaser.Math.Vector2(this.launcher.x - point.x, this.launcher.y - point.y).limit(MAX_PULL_DISTANCE);
-    this.aimLine.fillStyle(0xfff7c2, 0.68);
-    for (let i = 1; i <= 11; i += 1) {
-      const t = i / 11;
-      const x = this.launcher.x + pull.x * 1.9 * t;
-      const y = this.launcher.y - 42 + pull.y * 1.9 * t + 215 * t * t;
-      this.aimLine.fillCircle(x, y, Math.max(2, 5 - i * 0.25));
+    this.aimLine.lineStyle(8, AIM_THEME.shadow, 0.28);
+    this.aimLine.lineBetween(hand.x - 9, hand.y + 34, point.x, point.y);
+    this.aimLine.lineStyle(4 + charge * 2, AIM_THEME.hot, lineAlpha);
+    this.aimLine.lineBetween(hand.x - 9, hand.y + 34, point.x, point.y);
+    this.aimLine.lineStyle(2, AIM_THEME.cool, 0.5 + charge * 0.24);
+    this.aimLine.lineBetween(hand.x + 14, hand.y + 30, point.x, point.y);
+
+    this.aimLine.fillStyle(AIM_THEME.warm, 0.42 + charge * 0.35);
+    for (let i = 1; i <= 12; i += 1) {
+      const t = i / 12;
+      const x = this.launcher.x + pull.x * Phaser.Math.Linear(1.55, 2.15, charge) * t;
+      const y = this.launcher.y - 42 + pull.y * Phaser.Math.Linear(1.55, 2.15, charge) * t + Phaser.Math.Linear(180, 235, charge) * t * t;
+      const radius = Math.max(2.2, 6.5 - i * 0.28 + charge * 1.2);
+      this.aimLine.fillCircle(x, y, radius);
+      if (i % 3 === 0) {
+        this.aimLine.fillStyle(AIM_THEME.cool, 0.22 + charge * 0.28);
+        this.aimLine.fillCircle(x + 5, y - 3, radius * 0.54);
+        this.aimLine.fillStyle(AIM_THEME.warm, 0.42 + charge * 0.35);
+      }
     }
+  }
+
+  private getDragPull(point: Phaser.Math.Vector2) {
+    const anchor = this.dragAnchor ?? this.launcher;
+    return new Phaser.Math.Vector2(anchor.x - point.x, anchor.y - point.y).limit(MAX_PULL_DISTANCE);
   }
 
   private createPerformer() {
@@ -344,6 +384,18 @@ export class PropertyDamageScene extends Phaser.Scene {
       .setAlpha(alpha)
       .setAngle(this.performerPose === 'pull' ? -12 : this.performerPose === 'throw' ? 18 : -4)
       .setVisible(useGameStore.getState().roundState === 'ready');
+  }
+
+  private positionHeldGearForCharge(charge: number, alpha = 0.96) {
+    const point = this.getHeldGearPoint('pull');
+    const eased = Phaser.Math.Easing.Cubic.Out(Phaser.Math.Clamp(charge, 0, 1));
+    this.positionHeldGear(new Phaser.Math.Vector2(point.x - eased * 34, point.y + eased * 12), alpha);
+    this.heldGearPreview
+      ?.setAngle(-12 - eased * 14)
+      .setScale(this.getGearDisplayScale(useGameStore.getState().selectedGear, 0.92) * (1 + eased * 0.16));
+    this.performer
+      ?.setAngle(-2 - eased * 5)
+      .setScale(PERFORMER_SCALE * (1.02 + eased * 0.08), PERFORMER_SCALE * (0.99 - eased * 0.06));
   }
 
   private animatePerformerThrow(point: Phaser.Math.Vector2, pull: Phaser.Math.Vector2) {
@@ -424,13 +476,12 @@ export class PropertyDamageScene extends Phaser.Scene {
   private setupKeyboardShortcuts() {
     this.input.keyboard?.on('keydown-SPACE', () => this.quickLaunch());
     this.input.keyboard?.on('keydown-ENTER', () => this.quickLaunch());
-    this.input.keyboard?.on('keydown-R', () => this.resetLevel());
   }
 
   private quickLaunch() {
     const state = useGameStore.getState().roundState;
     if (state === 'summary') {
-      this.resetLevel(false);
+      this.resetLevel(true);
       return;
     }
     if (state !== 'ready') return;
@@ -458,12 +509,14 @@ export class PropertyDamageScene extends Phaser.Scene {
     this.settledTimer = 0;
     this.launchedAt = this.time.now;
     this.roundFinishing = false;
+    this.dragAnchor = null;
 
     this.activeGear = this.matter.add.sprite(spawnPoint.x, spawnPoint.y, this.getGearTextureKey(gearType));
     this.activeGear.setName(`gear-${gearType}`);
     this.activeGear.setData('gearType', gearType);
     this.activeGear.setData('behavior', config.behavior);
     this.activeGear.setDisplaySize(config.width, config.height);
+    if (config.behavior === 'ricochet') this.activeGear.setCircle(39);
     this.activeGear.setFrictionAir(0.01);
     this.activeGear.setBounce(config.bounciness);
     this.activeGear.setMass(config.mass * (1 + weightBonus));
@@ -471,7 +524,6 @@ export class PropertyDamageScene extends Phaser.Scene {
     this.activeGear.setVelocity((pull.x / LAUNCH_VELOCITY_DIVISOR) * powerBonus, (pull.y / LAUNCH_VELOCITY_DIVISOR) * powerBonus);
 
     if (config.behavior === 'spear') this.activeGear.setAngularVelocity(0.22);
-    if (config.behavior === 'ricochet') this.activeGear.setCircle(39);
     if (config.behavior === 'burst') this.time.delayedCall(850, () => this.fogBurst(this.activeGear?.x ?? this.launcher.x, this.activeGear?.y ?? this.launcher.y, true));
     if (config.behavior === 'balanced') this.activeGear.setAngularVelocity(pull.x > 0 ? 0.24 : -0.24);
 
@@ -490,18 +542,25 @@ export class PropertyDamageScene extends Phaser.Scene {
           (pair.bodyB as any).gameObject
         ].filter(Boolean) as Phaser.GameObjects.GameObject[];
 
-        const impact = Math.max(pair.bodyA.speed ?? 0, pair.bodyB.speed ?? 0) * 22;
+        const gear = objects.find((obj) => (obj as Phaser.Physics.Matter.Image).getData?.('gearType')) as Phaser.Physics.Matter.Image | undefined;
+        const behavior = gear?.getData('behavior') as GearConfig['behavior'] | undefined;
+        const impactMultiplier = behavior === 'ricochet' ? 1.35 : 1;
+        const impact = Math.max(pair.bodyA.speed ?? 0, pair.bodyB.speed ?? 0) * 22 * impactMultiplier;
         if (impact < 2) return;
 
         objects.forEach((obj) => {
           const image = obj as Phaser.Physics.Matter.Image;
           const meta = image.getData?.('breakable') as BreakableMeta | undefined;
-          if (!meta || meta.broken) return;
+          if (!image.active || !meta || meta.broken) return;
 
           const fragility = 1 + useGameStore.getState().upgrades.fragility * 0.14;
-          meta.health -= impact * fragility;
+          meta.health -= (impact + (behavior === 'ricochet' ? 8 : 0)) * fragility;
           image.setTint(0xffffff);
-          this.time.delayedCall(55, () => image.clearTint());
+          this.time.delayedCall(55, () => {
+            if (image.active) image.clearTint();
+          });
+
+          if (behavior === 'ricochet') this.cymbalPing(image.x, image.y, false);
 
           if (meta.health <= 0) {
             this.breakObject(image, meta, impact);
@@ -541,7 +600,7 @@ export class PropertyDamageScene extends Phaser.Scene {
     const behavior = this.activeGear?.getData('behavior');
     if (behavior === 'burst' && impact > 4) this.fogBurst(breakX, breakY, true);
     if (behavior === 'crusher' && impact > 5) this.shockwave(breakX, breakY);
-    if (behavior === 'ricochet' && impact > 7) this.cymbalPing(breakX, breakY);
+    if (behavior === 'ricochet' && impact > 7) this.cymbalPing(breakX, breakY, true);
   }
 
   private finishRound() {
@@ -581,7 +640,7 @@ export class PropertyDamageScene extends Phaser.Scene {
     if (this.roundCombo >= 3) bonuses.push(`Combo Chain x${this.roundCombo}: suspiciously efficient destruction.`);
     if (totalDamage > 2400) bonuses.push('Security Deposit: fully vaporized.');
     if (viralRoll) bonuses.push('Local Viral Clip: 25 people sent it to their group chat.');
-    if (this.roundChaos > 40) bonuses.push('Chaos Bonus: nobody can explain the cymbal trajectory.');
+    if (this.roundChaos > 40) bonuses.push('Trajectory Bonus: nobody can explain the cymbal path.');
     if (bonuses.length === 0) bonuses.push('Minor Incident: still technically a claim.');
     return bonuses.slice(0, 4);
   }
@@ -709,10 +768,12 @@ export class PropertyDamageScene extends Phaser.Scene {
     useGameStore.getState().updateLiveRound(this.roundDamage, this.roundChaos, this.roundCombo);
   }
 
-  private cymbalPing(x: number, y: number) {
+  private cymbalPing(x: number, y: number, damageNearby = true) {
     const spark = this.add.image(x, y, 'effect-spark').setAlpha(0.92).setScale(0.42);
     this.tweens.add({ targets: spark, scale: 4, alpha: 0, duration: 280, onComplete: () => spark.destroy() });
+    if (damageNearby) this.damageNearbyObjects(x, y, 125, 8, 'Cymbal Ping');
     this.roundChaos += 4;
+    this.roundDamage += damageNearby ? 90 : 20;
     useGameStore.getState().updateLiveRound(this.roundDamage, this.roundChaos, this.roundCombo);
   }
 
