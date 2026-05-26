@@ -19,6 +19,9 @@ type Upgrades = Record<UpgradeKey, number>;
 type GameStore = {
   selectedGear: GearType;
   roundState: RoundState;
+  liveDamage: number;
+  liveChaos: number;
+  liveCombo: number;
   cash: number;
   fans: number;
   chaos: number;
@@ -29,6 +32,8 @@ type GameStore = {
   upgrades: Upgrades;
   selectGear: (gear: GearType) => void;
   setRoundState: (state: RoundState) => void;
+  startRound: () => void;
+  updateLiveRound: (damage: number, chaos: number, combo: number) => void;
   addFeed: (message: string) => void;
   completeRound: (summary: RoundSummary) => void;
   buyUpgrade: (key: UpgradeKey) => void;
@@ -48,6 +53,9 @@ export const getUpgradeCost = (key: UpgradeKey, level: number) => upgradeCosts[k
 export const useGameStore = create<GameStore>((set, get) => ({
   selectedGear: 'guitar',
   roundState: 'ready',
+  liveDamage: 0,
+  liveChaos: 0,
+  liveCombo: 0,
   cash: 0,
   fans: 0,
   chaos: 0,
@@ -67,11 +75,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   selectGear: (gear) => set({ selectedGear: gear }),
   setRoundState: (roundState) => set({ roundState }),
+  startRound: () =>
+    set({
+      roundState: 'launched',
+      liveDamage: 0,
+      liveChaos: 0,
+      liveCombo: 0,
+      lastSummary: null
+    }),
+  updateLiveRound: (liveDamage, liveChaos, liveCombo) =>
+    set({ liveDamage, liveChaos, liveCombo }),
   addFeed: (message) =>
     set((state) => ({ feed: [message, ...state.feed].slice(0, 8) })),
   completeRound: (summary) =>
     set((state) => ({
       roundState: 'summary',
+      liveDamage: 0,
+      liveChaos: 0,
+      liveCombo: 0,
       cash: state.cash + Math.floor(summary.totalDamage * 0.12),
       fans: state.fans + summary.fans,
       chaos: state.chaos + summary.chaos,
@@ -98,6 +119,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   resetRun: () =>
     set({
       roundState: 'ready',
+      liveDamage: 0,
+      liveChaos: 0,
+      liveCombo: 0,
       combo: 0,
       lastSummary: null
     })

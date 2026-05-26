@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { getUpgradeCost, UpgradeKeyType, useGameStore } from '../store/gameStore';
 
 const upgrades: Array<{ key: UpgradeKeyType; label: string; note: string }> = [
@@ -9,36 +10,46 @@ const upgrades: Array<{ key: UpgradeKeyType; label: string; note: string }> = [
 ];
 
 export function UpgradePanel() {
+  const [isOpen, setIsOpen] = useState(false);
   const cash = useGameStore((state) => state.cash);
   const levels = useGameStore((state) => state.upgrades);
   const buyUpgrade = useGameStore((state) => state.buyUpgrade);
+  const totalLevels = upgrades.reduce((total, upgrade) => total + levels[upgrade.key], 0);
 
   return (
-    <section className="panel upgrade-panel">
-      <div className="panel-header">
+    <section className={`panel upgrade-panel drawer-panel ${isOpen ? 'is-open chaos-open' : 'is-collapsed'}`}>
+      <button
+        type="button"
+        className="drawer-toggle"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((open) => !open)}
+      >
         <span>Chaos Upgrades</span>
-      </div>
-      <div className="upgrade-list">
-        {upgrades.map((upgrade) => {
-          const level = levels[upgrade.key];
-          const cost = getUpgradeCost(upgrade.key, level);
-          return (
-            <button
-              key={upgrade.key}
-              type="button"
-              className="upgrade-row"
-              disabled={cash < cost}
-              onClick={() => buyUpgrade(upgrade.key)}
-            >
-              <span>
-                <strong>{upgrade.label}</strong>
-                <small>{upgrade.note} · L{level}</small>
-              </span>
-              <b>${cost}</b>
-            </button>
-          );
-        })}
-      </div>
+        <small>{totalLevels} levels · ${cash.toLocaleString()}</small>
+      </button>
+      {isOpen && (
+        <div className="upgrade-list">
+          {upgrades.map((upgrade) => {
+            const level = levels[upgrade.key];
+            const cost = getUpgradeCost(upgrade.key, level);
+            return (
+              <button
+                key={upgrade.key}
+                type="button"
+                className="upgrade-row"
+                disabled={cash < cost}
+                onClick={() => buyUpgrade(upgrade.key)}
+              >
+                <span>
+                  <strong>{upgrade.label}</strong>
+                  <small>{upgrade.note} · L{level}</small>
+                </span>
+                <b>${cost}</b>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

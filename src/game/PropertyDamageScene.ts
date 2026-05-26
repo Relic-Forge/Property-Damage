@@ -68,9 +68,67 @@ const GEAR: Record<GearType, GearConfig> = {
   }
 };
 
+const MAX_PULL_DISTANCE = 380;
+const LAUNCH_VELOCITY_DIVISOR = 11.5;
+const PERFORMER_SCALE = 0.42;
+const GEAR_VARIANTS = [1, 2, 3] as const;
+const WORLD_WIDTH = 1700;
+const WORLD_HEIGHT = 960;
+const CAMERA_ZOOM = 0.78;
+const FLOOR_Y = 905;
+type PerformerPose = 'idle' | 'pull' | 'throw' | 'recover';
+
+type LevelProp = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  key: string;
+  path: string;
+  label: string;
+  value: number;
+  health: number;
+  kind: BreakableMeta['kind'];
+};
+
+const LEVEL_PROPS: LevelProp[] = [
+  { x: 890, y: 806, width: 260, height: 100, key: 'prop-folding-table', path: '/assets/garage-band/props-raster/folding_table_intact.png', label: 'Folding Table', value: 260, health: 28, kind: 'wood' },
+  { x: 922, y: 735, width: 120, height: 118, key: 'prop-questionable-cake', path: '/assets/garage-band/props-raster/questionable_cake_intact.png', label: 'Questionable Cake', value: 420, health: 18, kind: 'soft' },
+  { x: 1120, y: 792, width: 150, height: 138, key: 'prop-old-tv', path: '/assets/garage-band/props-raster/old_tv_intact.png', label: 'Old TV', value: 780, health: 38, kind: 'electronics' },
+  { x: 1328, y: 720, width: 116, height: 225, key: 'prop-speaker-stack', path: '/assets/garage-band/props-raster/speaker_stack_intact.png', label: 'Speaker Stack', value: 680, health: 45, kind: 'metal' },
+  { x: 1548, y: 824, width: 150, height: 92, key: 'prop-cooler', path: '/assets/garage-band/props-raster/cooler_intact.png', label: 'Cooler of Regret', value: 320, health: 32, kind: 'metal' },
+  { x: 1430, y: 510, width: 330, height: 105, key: 'prop-garage-shelf', path: '/assets/garage-band/props-raster/garage_shelf_intact.png', label: 'Garage Shelf', value: 550, health: 36, kind: 'wood' },
+  { x: 1368, y: 430, width: 86, height: 92, key: 'prop-paint-can', path: '/assets/garage-band/props-raster/paint_can_intact.png', label: 'Paint Can', value: 190, health: 20, kind: 'metal' },
+  { x: 1450, y: 432, width: 130, height: 90, key: 'prop-cable-bin', path: '/assets/garage-band/props-raster/cable_bin_intact.png', label: 'Cable Bin', value: 210, health: 20, kind: 'soft' },
+  { x: 1540, y: 430, width: 104, height: 104, key: 'prop-mystery-box', path: '/assets/garage-band/props-raster/mystery_box_intact.png', label: 'Mystery Box', value: 240, health: 22, kind: 'wood' },
+  { x: 1050, y: 348, width: 265, height: 86, key: 'prop-neon-sign', path: '/assets/garage-band/props-raster/neon_sign_intact.png', label: 'Neon Sign', value: 900, health: 24, kind: 'glass' },
+  { x: 700, y: 782, width: 150, height: 150, key: 'prop-tiny-drum-kit', path: '/assets/garage-band/props-raster/tiny_drum_kit_intact.png', label: 'Tiny Drum Kit', value: 520, health: 30, kind: 'metal' },
+  { x: 1626, y: 648, width: 84, height: 245, key: 'prop-garage-window', path: '/assets/garage-band/props-raster/garage_window_intact.png', label: 'Garage Window', value: 760, health: 15, kind: 'glass' }
+];
+
+const DEBRIS_TEXTURES: Record<BreakableMeta['kind'], string[]> = {
+  glass: ['debris-glass-1'],
+  wood: ['debris-wood-1', 'debris-wood-2'],
+  metal: ['debris-metal-1'],
+  soft: ['debris-fabric-1'],
+  electronics: ['debris-metal-1', 'debris-glass-1']
+};
+
 export class PropertyDamageScene extends Phaser.Scene {
-  private launcher = new Phaser.Math.Vector2(150, 545);
+  private launcher = new Phaser.Math.Vector2(170, 765);
   private aimLine!: Phaser.GameObjects.Graphics;
+  private performer: Phaser.GameObjects.Image | null = null;
+  private heldGearPreview: Phaser.GameObjects.Image | null = null;
+  private previewGear: GearType | null = null;
+  private previewTextureKey: string | null = null;
+  private performerPose: PerformerPose = 'idle';
+  private gearVariantByType: Record<GearType, number> = {
+    guitar: 1,
+    amp: 1,
+    cymbal: 1,
+    micStand: 1,
+    fogMachine: 1
+  };
   private isDragging = false;
   private activeGear: Phaser.Physics.Matter.Sprite | null = null;
   private breakables: Phaser.Physics.Matter.Image[] = [];
@@ -80,96 +138,313 @@ export class PropertyDamageScene extends Phaser.Scene {
   private roundChaos = 0;
   private roundCombo = 0;
   private lastBreakAt = 0;
+  private launchedAt = 0;
+  private roundFinishing = false;
+  private maxRoundTimer: number | null = null;
   private resetHandler = () => this.resetLevel();
+  private stagePointerHandler = (event: Event) => {
+    const detail = (event as CustomEvent<{ type: 'down' | 'move' | 'up'; x: number; y: number }>).detail;
+    if (!detail) return;
+    const point = this.clampPointerPoint(this.cameras.main.getWorldPoint(detail.x, detail.y));
+    if (detail.type === 'down') this.beginDrag(point);
+    if (detail.type === 'move') this.moveDrag(point);
+    if (detail.type === 'up') this.endDrag(point);
+  };
+  private keyHandler = (event: KeyboardEvent) => {
+    if (event.code === 'Space' || event.code === 'Enter') {
+      event.preventDefault();
+      this.quickLaunch();
+    }
+    if (event.code === 'KeyR') this.resetLevel();
+  };
 
   constructor() {
     super('PropertyDamageScene');
   }
 
   preload() {
-    this.createGeneratedTexture('chunk-wood', 26, 18, '#b97842', '');
-    this.createGeneratedTexture('chunk-glass', 20, 14, '#94f4ff', '');
-    this.createGeneratedTexture('chunk-metal', 24, 16, '#b7b7c9', '');
-    this.createGeneratedTexture('dust', 24, 24, '#e3c9a3', '');
+    this.load.image('garage-background', '/assets/garage-band/backgrounds/garage_background.png');
+    this.load.svg('debris-wood-1', '/assets/garage-band/debris/wood_chunk_01.svg', { width: 48, height: 38 });
+    this.load.svg('debris-wood-2', '/assets/garage-band/debris/wood_chunk_02.svg', { width: 52, height: 34 });
+    this.load.svg('debris-glass-1', '/assets/garage-band/debris/glass_chunk_01.svg', { width: 44, height: 40 });
+    this.load.svg('debris-metal-1', '/assets/garage-band/debris/metal_chunk_01.svg', { width: 50, height: 36 });
+    this.load.svg('debris-fabric-1', '/assets/garage-band/debris/fabric_scrap_01.svg', { width: 54, height: 38 });
+    this.load.svg('effect-impact-star', '/assets/garage-band/effects/impact_star.svg', { width: 92, height: 92 });
+    this.load.svg('effect-dust-puff', '/assets/garage-band/effects/dust_puff.svg', { width: 84, height: 84 });
+    this.load.svg('effect-spark', '/assets/garage-band/effects/spark_01.svg', { width: 64, height: 64 });
+    this.load.svg('effect-smoke-puff', '/assets/garage-band/effects/smoke_puff.svg', { width: 96, height: 96 });
+    LEVEL_PROPS.forEach((prop) => {
+      this.load.image(prop.key, prop.path);
+    });
 
-    Object.entries(GEAR).forEach(([key, config]) => {
-      this.createGeneratedTexture(`gear-${key}`, config.width, config.height, config.color, config.label);
+    Object.keys(GEAR).forEach((key) => {
+      GEAR_VARIANTS.forEach((variant) => {
+        this.load.image(`gear-${key}-${variant}`, `/assets/garage-band/${key}-v${variant}.png`);
+      });
+    });
+    (['idle', 'pull', 'throw', 'recover'] as PerformerPose[]).forEach((pose) => {
+      this.load.image(`performer-${pose}`, `/assets/thrower-${pose}.png`);
     });
   }
 
   create() {
+    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    this.cameras.main.setZoom(CAMERA_ZOOM);
+    this.cameras.main.centerOn(820, 500);
     this.drawGarageBackground();
     this.aimLine = this.add.graphics();
     this.createWorldBounds();
     this.createVenueObjects();
     this.setupInput();
+    this.setupKeyboardShortcuts();
     this.setupCollisions();
-    this.add.text(this.launcher.x - 55, this.launcher.y + 50, 'PULL + RELEASE', {
-      color: '#f8f1dc',
-      fontFamily: 'Arial Black, Impact, sans-serif',
-      fontSize: '16px'
-    }).setAlpha(0.78);
-    this.add.circle(this.launcher.x, this.launcher.y, 28, 0xff5c8a, 0.35).setStrokeStyle(3, 0xffe17d, 0.75);
+    this.createPerformer();
+    this.updateReadyGearPreview();
 
     window.addEventListener('pd:reset-level', this.resetHandler);
+    window.addEventListener('pd:stage-pointer', this.stagePointerHandler);
+    window.addEventListener('keydown', this.keyHandler);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       window.removeEventListener('pd:reset-level', this.resetHandler);
+      window.removeEventListener('pd:stage-pointer', this.stagePointerHandler);
+      window.removeEventListener('keydown', this.keyHandler);
     });
   }
 
   update(_time: number, delta: number) {
     const roundState = useGameStore.getState().roundState;
+    if (roundState === 'ready' && !this.isDragging) this.updateReadyGearPreview();
     if (roundState !== 'launched') return;
 
     const bodies = [this.activeGear, ...this.breakables, ...this.debris].filter(Boolean) as Phaser.Physics.Matter.Image[];
     const moving = bodies.some((obj) => obj.body && Math.abs(((obj.body as any).speed ?? 0)) > 0.35);
+    const timedOut = this.time.now - this.launchedAt > 12000;
 
-    if (moving) {
+    if (moving && !timedOut) {
       this.settledTimer = 0;
       return;
     }
 
     this.settledTimer += delta;
-    if (this.settledTimer > 1400) {
+    if (!this.roundFinishing && (this.settledTimer > 1400 || timedOut)) {
+      this.roundFinishing = true;
       useGameStore.getState().setRoundState('settling');
-      this.time.delayedCall(650, () => this.finishRound());
+      window.setTimeout(() => this.finishRound(), 650);
     }
   }
 
   private setupInput() {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      const state = useGameStore.getState().roundState;
-      if (state === 'summary') this.resetLevel(false);
-      if (useGameStore.getState().roundState !== 'ready') return;
-      if (Phaser.Math.Distance.Between(pointer.x, pointer.y, this.launcher.x, this.launcher.y) > 170) return;
-      this.isDragging = true;
+      this.beginDrag(this.getPointerPoint(pointer));
     });
 
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      if (!this.isDragging) return;
-      this.aimLine.clear();
-      this.aimLine.lineStyle(6, 0xffe17d, 0.9);
-      this.aimLine.beginPath();
-      this.aimLine.moveTo(this.launcher.x, this.launcher.y);
-      this.aimLine.lineTo(pointer.x, pointer.y);
-      this.aimLine.strokePath();
-      this.aimLine.fillStyle(0xff5c8a, 0.55);
-      this.aimLine.fillCircle(pointer.x, pointer.y, 12);
+      this.moveDrag(this.getPointerPoint(pointer));
     });
 
     this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-      if (!this.isDragging) return;
-      this.isDragging = false;
-      this.aimLine.clear();
-
-      const pull = new Phaser.Math.Vector2(this.launcher.x - pointer.x, this.launcher.y - pointer.y);
-      if (pull.length() < 20) return;
-      pull.limit(265);
-      this.launchGear(pull);
+      this.endDrag(this.getPointerPoint(pointer));
     });
   }
 
-  private launchGear(pull: Phaser.Math.Vector2) {
+  private getPointerPoint(pointer: Phaser.Input.Pointer) {
+    const point = pointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
+    return this.clampPointerPoint(point);
+  }
+
+  private clampPointerPoint(point: Phaser.Math.Vector2) {
+    return new Phaser.Math.Vector2(
+      Phaser.Math.Clamp(point.x, -120, 520),
+      Phaser.Math.Clamp(point.y, 360, 930)
+    );
+  }
+
+  private beginDrag(point: Phaser.Math.Vector2) {
+    const state = useGameStore.getState().roundState;
+    if (state === 'summary') this.resetLevel(false);
+    if (useGameStore.getState().roundState !== 'ready') return;
+    const inLaunchZone = point.x < 405 && point.y > 300;
+    const nearLauncher = Phaser.Math.Distance.Between(point.x, point.y, this.launcher.x, this.launcher.y) < 300;
+    if (!inLaunchZone && !nearLauncher) return;
+    this.isDragging = true;
+    this.setPerformerPose('pull');
+    this.updateReadyGearPreview();
+    this.positionHeldGear(point, 1);
+    this.drawAim(point);
+  }
+
+  private moveDrag(point: Phaser.Math.Vector2) {
+    if (!this.isDragging) return;
+    this.positionHeldGear(point, 1);
+    this.drawAim(point);
+  }
+
+  private endDrag(point: Phaser.Math.Vector2) {
+    if (!this.isDragging) return;
+    this.isDragging = false;
+    this.aimLine.clear();
+
+    const pull = new Phaser.Math.Vector2(this.launcher.x - point.x, this.launcher.y - point.y);
+    if (pull.length() < 20) {
+      this.setPerformerPose('idle');
+      this.updateReadyGearPreview();
+      return;
+    }
+    pull.limit(MAX_PULL_DISTANCE);
+    this.animatePerformerThrow(point, pull);
+  }
+
+  private drawAim(point: Phaser.Math.Vector2) {
+    this.aimLine.clear();
+    this.aimLine.lineStyle(4, 0xffe17d, 0.72);
+    this.aimLine.lineBetween(this.launcher.x - 18, this.launcher.y - 70, point.x, point.y);
+    this.aimLine.lineBetween(this.launcher.x + 20, this.launcher.y - 74, point.x, point.y);
+
+    const pull = new Phaser.Math.Vector2(this.launcher.x - point.x, this.launcher.y - point.y).limit(MAX_PULL_DISTANCE);
+    this.aimLine.fillStyle(0xfff7c2, 0.68);
+    for (let i = 1; i <= 11; i += 1) {
+      const t = i / 11;
+      const x = this.launcher.x + pull.x * 1.9 * t;
+      const y = this.launcher.y - 42 + pull.y * 1.9 * t + 215 * t * t;
+      this.aimLine.fillCircle(x, y, Math.max(2, 5 - i * 0.25));
+    }
+  }
+
+  private createPerformer() {
+    this.performer = this.add.image(this.launcher.x - 18, this.launcher.y + 74, 'performer-idle');
+    this.performer.setOrigin(0.5, 1);
+    this.performer.setDepth(16);
+    this.setPerformerPose('idle');
+  }
+
+  private setPerformerPose(pose: PerformerPose) {
+    this.performerPose = pose;
+    this.performer?.setPosition(this.launcher.x - 18, this.launcher.y + 74);
+    this.performer?.setTexture(`performer-${pose}`);
+    if (pose === 'idle') this.performer?.setAngle(0).setScale(PERFORMER_SCALE);
+    if (pose === 'pull') this.performer?.setAngle(-2).setScale(PERFORMER_SCALE * 1.02, PERFORMER_SCALE * 0.99);
+    if (pose === 'throw') this.performer?.setAngle(3).setScale(PERFORMER_SCALE * 1.03, PERFORMER_SCALE * 0.98);
+    if (pose === 'recover') this.performer?.setAngle(1).setScale(PERFORMER_SCALE);
+  }
+
+  private getHeldGearPoint(pose = this.performerPose) {
+    if (pose === 'pull') return new Phaser.Math.Vector2(this.launcher.x - 72, this.launcher.y - 118);
+    if (pose === 'throw') return new Phaser.Math.Vector2(this.launcher.x + 82, this.launcher.y - 132);
+    if (pose === 'recover') return new Phaser.Math.Vector2(this.launcher.x + 58, this.launcher.y - 96);
+    return new Phaser.Math.Vector2(this.launcher.x - 38, this.launcher.y - 118);
+  }
+
+  private positionHeldGear(point = this.getHeldGearPoint(), alpha = 0.96) {
+    if (!this.heldGearPreview) return;
+    const gearType = useGameStore.getState().selectedGear;
+    const scale = this.getGearDisplayScale(gearType, 0.92);
+    this.heldGearPreview
+      .setPosition(point.x, point.y)
+      .setScale(scale)
+      .setAlpha(alpha)
+      .setAngle(this.performerPose === 'pull' ? -12 : this.performerPose === 'throw' ? 18 : -4)
+      .setVisible(useGameStore.getState().roundState === 'ready');
+  }
+
+  private animatePerformerThrow(point: Phaser.Math.Vector2, pull: Phaser.Math.Vector2) {
+    const releasePoint = this.getHeldGearPoint('throw');
+    const settlePoint = this.getHeldGearPoint('recover');
+    this.setPerformerPose('throw');
+    if (!this.heldGearPreview) {
+      this.launchGear(pull, releasePoint);
+      return;
+    }
+
+    this.heldGearPreview.setVisible(true);
+    this.tweens.killTweensOf(this.heldGearPreview);
+    this.tweens.add({
+      targets: this.heldGearPreview,
+      x: releasePoint.x,
+      y: releasePoint.y,
+      angle: pull.x > 0 ? 48 : -48,
+      scale: this.heldGearPreview.scale * 1.08,
+      duration: 115,
+      ease: 'Back.easeIn',
+      onComplete: () => {
+        this.heldGearPreview?.setVisible(false);
+        this.previewGear = null;
+        this.launchGear(pull, releasePoint);
+        this.setPerformerPose('recover');
+        this.time.delayedCall(420, () => {
+          if (useGameStore.getState().roundState === 'ready') this.setPerformerPose('idle');
+          else {
+            this.performer?.setTexture('performer-recover');
+            this.heldGearPreview?.setPosition(settlePoint.x, settlePoint.y);
+          }
+        });
+      }
+    });
+
+    this.tweens.add({
+      targets: this.performer,
+      x: this.launcher.x + 10,
+      duration: 115,
+      yoyo: true,
+      ease: 'Cubic.easeOut'
+    });
+  }
+
+  private updateReadyGearPreview() {
+    const gearType = useGameStore.getState().selectedGear;
+    const textureKey = this.getGearTextureKey(gearType);
+    if (!this.heldGearPreview) {
+      this.heldGearPreview = this.add.image(this.launcher.x, this.launcher.y, textureKey);
+      this.heldGearPreview.setDepth(18);
+      this.heldGearPreview.setAlpha(0.96);
+      this.previewGear = gearType;
+      this.previewTextureKey = textureKey;
+    }
+    if (this.previewGear !== gearType || this.previewTextureKey !== textureKey) {
+      this.heldGearPreview.setTexture(textureKey);
+      this.previewGear = gearType;
+      this.previewTextureKey = textureKey;
+    }
+    this.heldGearPreview.setVisible(useGameStore.getState().roundState === 'ready');
+    this.positionHeldGear();
+  }
+
+  private getGearTextureKey(gearType: GearType) {
+    return `gear-${gearType}-${this.gearVariantByType[gearType]}`;
+  }
+
+  private getGearDisplayScale(gearType: GearType, targetPixels: number) {
+    const config = GEAR[gearType];
+    return targetPixels * (Math.max(config.width, config.height) / 320);
+  }
+
+  private advanceGearVariant(gearType: GearType) {
+    this.gearVariantByType[gearType] = (this.gearVariantByType[gearType] % GEAR_VARIANTS.length) + 1;
+  }
+
+  private setupKeyboardShortcuts() {
+    this.input.keyboard?.on('keydown-SPACE', () => this.quickLaunch());
+    this.input.keyboard?.on('keydown-ENTER', () => this.quickLaunch());
+    this.input.keyboard?.on('keydown-R', () => this.resetLevel());
+  }
+
+  private quickLaunch() {
+    const state = useGameStore.getState().roundState;
+    if (state === 'summary') {
+      this.resetLevel(false);
+      return;
+    }
+    if (state !== 'ready') return;
+    const pull = new Phaser.Math.Vector2(
+      Phaser.Math.Between(330, 380),
+      Phaser.Math.Between(-175, -115)
+    );
+    const startPoint = this.getHeldGearPoint('pull').subtract(new Phaser.Math.Vector2(170, -45));
+    this.setPerformerPose('pull');
+    this.positionHeldGear(startPoint, 1);
+    this.animatePerformerThrow(startPoint, pull);
+  }
+
+  private launchGear(pull: Phaser.Math.Vector2, spawnPoint = this.launcher) {
     const store = useGameStore.getState();
     const gearType = store.selectedGear;
     const config = GEAR[gearType];
@@ -181,22 +456,30 @@ export class PropertyDamageScene extends Phaser.Scene {
     this.roundCombo = 0;
     this.lastBreakAt = 0;
     this.settledTimer = 0;
+    this.launchedAt = this.time.now;
+    this.roundFinishing = false;
 
-    this.activeGear = this.matter.add.sprite(this.launcher.x, this.launcher.y, `gear-${gearType}`);
+    this.activeGear = this.matter.add.sprite(spawnPoint.x, spawnPoint.y, this.getGearTextureKey(gearType));
     this.activeGear.setName(`gear-${gearType}`);
     this.activeGear.setData('gearType', gearType);
     this.activeGear.setData('behavior', config.behavior);
+    this.activeGear.setDisplaySize(config.width, config.height);
     this.activeGear.setFrictionAir(0.01);
     this.activeGear.setBounce(config.bounciness);
     this.activeGear.setMass(config.mass * (1 + weightBonus));
     this.activeGear.setAngularVelocity(Phaser.Math.FloatBetween(-0.18, 0.18));
-    this.activeGear.setVelocity((pull.x / 17) * powerBonus, (pull.y / 17) * powerBonus);
+    this.activeGear.setVelocity((pull.x / LAUNCH_VELOCITY_DIVISOR) * powerBonus, (pull.y / LAUNCH_VELOCITY_DIVISOR) * powerBonus);
 
     if (config.behavior === 'spear') this.activeGear.setAngularVelocity(0.22);
     if (config.behavior === 'ricochet') this.activeGear.setCircle(39);
+    if (config.behavior === 'burst') this.time.delayedCall(850, () => this.fogBurst(this.activeGear?.x ?? this.launcher.x, this.activeGear?.y ?? this.launcher.y, true));
+    if (config.behavior === 'balanced') this.activeGear.setAngularVelocity(pull.x > 0 ? 0.24 : -0.24);
 
-    store.setRoundState('launched');
+    store.startRound();
     store.addFeed(`${config.label} launched. Bad idea confirmed.`);
+    this.advanceGearVariant(gearType);
+    this.previewTextureKey = null;
+    this.maxRoundTimer = window.setTimeout(() => this.forceFinishRound(), 12500);
   }
 
   private setupCollisions() {
@@ -229,6 +512,9 @@ export class PropertyDamageScene extends Phaser.Scene {
   }
 
   private breakObject(image: Phaser.Physics.Matter.Image, meta: BreakableMeta, impact: number) {
+    const breakX = image.x;
+    const breakY = image.y;
+
     meta.broken = true;
     image.setVisible(false);
     image.setStatic(false);
@@ -243,20 +529,26 @@ export class PropertyDamageScene extends Phaser.Scene {
     const damage = Math.round(meta.value * comboMultiplier + impact * 17);
     this.roundDamage += damage;
     this.roundChaos += Math.ceil(impact / 4) + this.roundCombo;
+    useGameStore.getState().updateLiveRound(this.roundDamage, this.roundChaos, this.roundCombo);
 
-    this.spawnDebris(image.x, image.y, meta.kind, Phaser.Math.Between(4, 8));
-    this.createFloatingText(image.x, image.y - 20, `$${damage.toLocaleString()}`);
+    this.spawnDebris(breakX, breakY, meta.kind, Phaser.Math.Between(4, 8));
+    this.createFloatingText(breakX, breakY - 20, `$${damage.toLocaleString()}`);
     this.cameras.main.shake(Math.min(260, 90 + impact * 8), Math.min(0.018, 0.004 + impact / 900));
 
     const flavor = this.getBreakFlavor(meta.label);
     useGameStore.getState().addFeed(flavor);
 
     const behavior = this.activeGear?.getData('behavior');
-    if (behavior === 'burst' && impact > 4) this.fogBurst(image.x, image.y);
-    if (behavior === 'crusher' && impact > 5) this.shockwave(image.x, image.y);
+    if (behavior === 'burst' && impact > 4) this.fogBurst(breakX, breakY, true);
+    if (behavior === 'crusher' && impact > 5) this.shockwave(breakX, breakY);
+    if (behavior === 'ricochet' && impact > 7) this.cymbalPing(breakX, breakY);
   }
 
   private finishRound() {
+    if (this.maxRoundTimer !== null) {
+      window.clearTimeout(this.maxRoundTimer);
+      this.maxRoundTimer = null;
+    }
     const store = useGameStore.getState();
     const viralRoll = Math.random() < 0.18 + store.upgrades.viralChance * 0.04;
     const insuranceMultiplier = 1 + store.upgrades.insuranceMultiplier * 0.08;
@@ -275,6 +567,13 @@ export class PropertyDamageScene extends Phaser.Scene {
     };
 
     store.completeRound(summary);
+  }
+
+  private forceFinishRound() {
+    if (useGameStore.getState().roundState !== 'launched' || this.roundFinishing) return;
+    this.roundFinishing = true;
+    useGameStore.getState().setRoundState('settling');
+    window.setTimeout(() => this.finishRound(), 650);
   }
 
   private buildBonuses(totalDamage: number, viralRoll: boolean) {
@@ -306,6 +605,12 @@ export class PropertyDamageScene extends Phaser.Scene {
   }
 
   private resetLevel(setReady = true) {
+    if (this.maxRoundTimer !== null) {
+      window.clearTimeout(this.maxRoundTimer);
+      this.maxRoundTimer = null;
+    }
+    this.aimLine?.clear();
+    this.setPerformerPose('idle');
     this.activeGear?.destroy();
     this.activeGear = null;
     this.breakables.forEach((obj) => obj.destroy());
@@ -317,46 +622,38 @@ export class PropertyDamageScene extends Phaser.Scene {
     this.roundCombo = 0;
     this.lastBreakAt = 0;
     this.settledTimer = 0;
-    this.createVenueObjects();
+    this.launchedAt = 0;
+    this.roundFinishing = false;
     if (setReady) useGameStore.getState().resetRun();
     else useGameStore.getState().setRoundState('ready');
+    this.createVenueObjects();
+    this.updateReadyGearPreview();
   }
 
   private createWorldBounds() {
-    this.matter.world.setBounds(0, 0, 1280, 720, 64, true, true, true, true);
-    this.matter.add.rectangle(640, 700, 1280, 48, { isStatic: true, restitution: 0.35, friction: 0.82 });
+    this.matter.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT, 64, true, true, true, true);
+    this.matter.add.rectangle(WORLD_WIDTH / 2, FLOOR_Y, WORLD_WIDTH, 48, { isStatic: true, restitution: 0.35, friction: 0.82 });
   }
 
   private createVenueObjects() {
-    this.addBreakable(710, 602, 128, 35, '#ff8fab', 'Folding Table', 260, 28, 'wood');
-    this.addBreakable(742, 555, 72, 58, '#ffe066', 'Questionable Cake', 420, 18, 'soft');
-    this.addBreakable(895, 588, 92, 95, '#2dd4bf', 'Old TV', 780, 38, 'electronics');
-    this.addBreakable(1015, 555, 72, 160, '#a78bfa', 'Speaker Stack', 680, 45, 'metal');
-    this.addBreakable(1140, 612, 90, 44, '#fb7185', 'Cooler of Regret', 320, 32, 'metal');
-    this.addBreakable(1085, 415, 210, 28, '#b97842', 'Garage Shelf', 550, 36, 'wood');
-    this.addBreakable(1035, 365, 50, 50, '#facc15', 'Paint Can', 190, 20, 'metal');
-    this.addBreakable(1100, 360, 82, 44, '#38bdf8', 'Cable Bin', 210, 20, 'soft');
-    this.addBreakable(1168, 358, 62, 62, '#fb923c', 'Mystery Box', 240, 22, 'wood');
-    this.addBreakable(785, 330, 160, 38, '#f472b6', 'Neon Sign', 900, 24, 'glass');
-    this.addBreakable(595, 590, 92, 105, '#e879f9', 'Tiny Drum Kit', 520, 30, 'metal');
-    this.addBreakable(1210, 475, 32, 170, '#93c5fd', 'Garage Window', 760, 15, 'glass');
+    LEVEL_PROPS.forEach((prop) => this.addBreakable(prop));
   }
 
-  private addBreakable(x: number, y: number, width: number, height: number, color: string, label: string, value: number, health: number, kind: BreakableMeta['kind']) {
-    const key = `prop-${label.replace(/\s+/g, '-').toLowerCase()}-${width}-${height}`;
-    if (!this.textures.exists(key)) this.createGeneratedTexture(key, width, height, color, label);
-    const image = this.matter.add.image(x, y, key, undefined, {
+  private addBreakable(prop: LevelProp) {
+    const image = this.matter.add.image(prop.x, prop.y, prop.key, undefined, {
+      isStatic: true,
       restitution: 0.42,
       friction: 0.62,
       density: 0.0015
     });
+    image.setDisplaySize(prop.width, prop.height);
     image.setData('breakable', {
-      id: key,
-      label,
-      value,
-      health,
+      id: prop.key,
+      label: prop.label,
+      value: prop.value,
+      health: prop.health,
       broken: false,
-      kind
+      kind: prop.kind
     } satisfies BreakableMeta);
     image.setFrictionAir(0.012);
     this.breakables.push(image);
@@ -364,8 +661,9 @@ export class PropertyDamageScene extends Phaser.Scene {
   }
 
   private spawnDebris(x: number, y: number, kind: BreakableMeta['kind'], count: number) {
-    const texture = kind === 'glass' ? 'chunk-glass' : kind === 'metal' || kind === 'electronics' ? 'chunk-metal' : 'chunk-wood';
+    const textures = DEBRIS_TEXTURES[kind];
     for (let i = 0; i < count; i += 1) {
+      const texture = Phaser.Utils.Array.GetRandom(textures);
       const piece = this.matter.add.image(x + Phaser.Math.Between(-12, 12), y + Phaser.Math.Between(-10, 10), texture, undefined, {
         restitution: 0.55,
         friction: 0.75
@@ -378,22 +676,59 @@ export class PropertyDamageScene extends Phaser.Scene {
     }
   }
 
-  private fogBurst(x: number, y: number) {
+  private fogBurst(x: number, y: number, damageNearby = false) {
     for (let i = 0; i < 10; i += 1) {
-      const puff = this.matter.add.image(x, y, 'dust', undefined, { restitution: 0.2, frictionAir: 0.08 });
+      const puff = this.matter.add.image(x, y, 'effect-smoke-puff', undefined, { restitution: 0.2, frictionAir: 0.08 });
       puff.setAlpha(0.42);
       puff.setScale(Phaser.Math.FloatBetween(1.0, 2.2));
       puff.setVelocity(Phaser.Math.FloatBetween(-5, 5), Phaser.Math.FloatBetween(-5, 1));
       this.tweens.add({ targets: puff, alpha: 0, scale: 3, duration: 950, onComplete: () => puff.destroy() });
     }
     this.roundDamage += 175;
+    if (damageNearby) this.damageNearbyObjects(x, y, 145, 10, 'Fog Incident');
+    useGameStore.getState().updateLiveRound(this.roundDamage, this.roundChaos, this.roundCombo);
     this.createFloatingText(x, y - 40, 'FOG INCIDENT +$175');
   }
 
   private shockwave(x: number, y: number) {
-    const ring = this.add.circle(x, y, 10).setStrokeStyle(5, 0xffe17d, 0.8);
-    this.tweens.add({ targets: ring, radius: 90, alpha: 0, duration: 420, onComplete: () => ring.destroy() });
+    const ring = this.add.image(x, y, 'effect-impact-star').setAlpha(0.9).setScale(0.35);
+    this.tweens.add({ targets: ring, scale: 1.45, alpha: 0, duration: 420, onComplete: () => ring.destroy() });
     this.roundDamage += 120;
+    this.roundChaos += 6;
+    this.breakables.forEach((obj) => {
+      if (!obj.active || !obj.body) return;
+      const distance = Phaser.Math.Distance.Between(x, y, obj.x, obj.y);
+      if (distance > 170) return;
+      const strength = Phaser.Math.Linear(0.045, 0.012, distance / 170);
+      const angle = Phaser.Math.Angle.Between(x, y, obj.x, obj.y);
+      obj.applyForce(new Phaser.Math.Vector2(
+        Math.cos(angle) * strength,
+        Math.sin(angle) * strength - strength * 0.35
+      ));
+    });
+    useGameStore.getState().updateLiveRound(this.roundDamage, this.roundChaos, this.roundCombo);
+  }
+
+  private cymbalPing(x: number, y: number) {
+    const spark = this.add.image(x, y, 'effect-spark').setAlpha(0.92).setScale(0.42);
+    this.tweens.add({ targets: spark, scale: 4, alpha: 0, duration: 280, onComplete: () => spark.destroy() });
+    this.roundChaos += 4;
+    useGameStore.getState().updateLiveRound(this.roundDamage, this.roundChaos, this.roundCombo);
+  }
+
+  private damageNearbyObjects(x: number, y: number, radius: number, amount: number, source: string) {
+    this.breakables.forEach((obj) => {
+      if (!obj.active) return;
+      const meta = obj.getData('breakable') as BreakableMeta | undefined;
+      if (!meta || meta.broken) return;
+      const distance = Phaser.Math.Distance.Between(x, y, obj.x, obj.y);
+      if (distance > radius) return;
+      meta.health -= amount * Phaser.Math.Linear(1, 0.3, distance / radius);
+      if (meta.health <= 0) {
+        this.breakObject(obj, meta, amount);
+        useGameStore.getState().addFeed(`${source}: ${meta.label} could not handle the atmosphere.`);
+      }
+    });
   }
 
   private createFloatingText(x: number, y: number, text: string) {
@@ -416,70 +751,8 @@ export class PropertyDamageScene extends Phaser.Scene {
   }
 
   private drawGarageBackground() {
-    const g = this.add.graphics();
-    g.fillGradientStyle(0x221b2f, 0x221b2f, 0x32233a, 0x19161f, 1);
-    g.fillRect(0, 0, 1280, 720);
-    g.fillStyle(0x2d2433, 1);
-    g.fillRect(0, 620, 1280, 100);
-    g.lineStyle(2, 0x4a3b4f, 0.6);
-    for (let x = 0; x < 1280; x += 90) g.lineBetween(x, 620, x + 120, 720);
-    g.fillStyle(0x443347, 0.8);
-    g.fillRect(420, 115, 790, 500);
-    g.lineStyle(5, 0x5d4a5f, 0.75);
-    g.strokeRect(420, 115, 790, 500);
-    g.lineStyle(2, 0x5d4a5f, 0.35);
-    for (let y = 175; y < 590; y += 65) g.lineBetween(420, y, 1210, y);
-    this.add.text(465, 150, 'THE GARAGE THAT SHOULD HAVE STAYED QUIET', {
-      color: '#f8f1dc',
-      fontFamily: 'Arial Black, Impact, sans-serif',
-      fontSize: '24px'
-    }).setAlpha(0.72);
+    this.add.image(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, 'garage-background')
+      .setDisplaySize(WORLD_WIDTH, WORLD_HEIGHT)
+      .setDepth(-10);
   }
-
-  private createGeneratedTexture(key: string, width: number, height: number, color: string, label: string) {
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(width, 28);
-    canvas.height = Math.max(height, 20);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const radius = Math.min(14, width / 5, height / 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    roundRect(ctx, 3, 4, width - 4, height - 4, radius);
-    ctx.fill();
-    ctx.fillStyle = color;
-    roundRect(ctx, 0, 0, width - 4, height - 5, radius);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(25,22,31,0.7)';
-    ctx.lineWidth = 4;
-    ctx.stroke();
-
-    ctx.fillStyle = 'rgba(255,255,255,0.24)';
-    roundRect(ctx, 8, 7, Math.max(8, width - 26), Math.max(5, height * 0.22), Math.max(4, radius / 2));
-    ctx.fill();
-
-    if (label) {
-      ctx.fillStyle = '#19161f';
-      ctx.font = `900 ${Math.max(10, Math.min(17, width / Math.max(label.length * 0.52, 5)))}px Arial`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, width / 2 - 2, height / 2 - 1, width - 10);
-    }
-
-    this.textures.addCanvas(key, canvas);
-  }
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + width - radius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-  ctx.lineTo(x + width, y + height - radius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  ctx.lineTo(x + radius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
 }

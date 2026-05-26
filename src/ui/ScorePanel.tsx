@@ -6,6 +6,11 @@ export function ScorePanel() {
   const chaos = useGameStore((state) => state.chaos);
   const bestDamage = useGameStore((state) => state.bestDamage);
   const summary = useGameStore((state) => state.lastSummary);
+  const roundState = useGameStore((state) => state.roundState);
+  const liveDamage = useGameStore((state) => state.liveDamage);
+  const liveChaos = useGameStore((state) => state.liveChaos);
+  const liveCombo = useGameStore((state) => state.liveCombo);
+  const isRoundActive = roundState === 'launched' || roundState === 'settling';
 
   return (
     <aside className="score-strip">
@@ -13,7 +18,12 @@ export function ScorePanel() {
       <Stat label="Fans" value={fans.toLocaleString()} />
       <Stat label="Chaos" value={chaos.toLocaleString()} />
       <Stat label="Best" value={`$${bestDamage.toLocaleString()}`} />
-      {summary && <div className="latest-score">{summary.title}</div>}
+      {isRoundActive && (
+        <div className="latest-score live-score">
+          ${liveDamage.toLocaleString()} live damage · x{Math.max(1, liveCombo)} combo · {liveChaos} chaos
+        </div>
+      )}
+      {!isRoundActive && summary && <div className="latest-score">{summary.title}</div>}
     </aside>
   );
 }
