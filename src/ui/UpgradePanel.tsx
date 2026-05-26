@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { getUpgradeCost, UpgradeKeyType, useGameStore } from '../store/gameStore';
 
-const upgrades: Array<{ key: UpgradeKeyType; label: string; note: string }> = [
-  { key: 'launchPower', label: 'Launch Power', note: 'more bad physics' },
-  { key: 'gearWeight', label: 'Gear Weight', note: 'hits with regret' },
-  { key: 'fragility', label: 'Fragile Room', note: 'cheaper construction' },
-  { key: 'viralChance', label: 'Viral Clip', note: 'fans from chaos' },
-  { key: 'insuranceMultiplier', label: 'Insurance Math', note: 'damage pays better' }
+const upgrades: Array<{ key: UpgradeKeyType; label: string; note: string; symbol: string }> = [
+  { key: 'launchPower', label: 'Bigger Windup', note: 'more bad physics per fling', symbol: '!' },
+  { key: 'gearWeight', label: 'Heavier Gear', note: 'hits with extra regret', symbol: '#' },
+  { key: 'fragility', label: 'Cheap Drywall', note: 'room folds under pressure', symbol: '%' },
+  { key: 'viralChance', label: 'Neighbor Cam', note: 'fans from public evidence', symbol: '*' },
+  { key: 'insuranceMultiplier', label: 'Claim Math', note: 'damage pays suspiciously better', symbol: '$' }
 ];
 
 export function UpgradePanel() {
@@ -17,30 +17,40 @@ export function UpgradePanel() {
   const totalLevels = upgrades.reduce((total, upgrade) => total + levels[upgrade.key], 0);
 
   return (
-    <section className={`panel upgrade-panel drawer-panel ${isOpen ? 'is-open chaos-open' : 'is-collapsed'}`}>
+    <section className={`stage-menu upgrade-menu ${isOpen ? 'is-open chaos-open' : 'is-collapsed'}`}>
       <button
         type="button"
-        className="drawer-toggle"
+        className="menu-trigger upgrade-trigger"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((open) => !open)}
       >
-        <span>Chaos Upgrades</span>
-        <small>{totalLevels} levels · ${cash.toLocaleString()}</small>
+        <span className="trigger-mark">!</span>
+        <span className="trigger-copy">
+          <span>Chaos Mods</span>
+          <strong>{totalLevels} levels</strong>
+          <small>${cash.toLocaleString()} in the jar</small>
+        </span>
       </button>
-      {isOpen && (
+      <div className="menu-popover upgrade-popover" aria-hidden={!isOpen}>
+        <div className="menu-popover-header">
+          <span>Chaos Pedals</span>
+          <small>voids warranties tastefully</small>
+        </div>
         <div className="upgrade-list">
           {upgrades.map((upgrade) => {
             const level = levels[upgrade.key];
             const cost = getUpgradeCost(upgrade.key, level);
+            const canBuy = cash >= cost;
             return (
               <button
                 key={upgrade.key}
                 type="button"
                 className="upgrade-row"
-                disabled={cash < cost}
+                disabled={!canBuy}
                 onClick={() => buyUpgrade(upgrade.key)}
               >
-                <span>
+                <span className="upgrade-mark">{upgrade.symbol}</span>
+                <span className="upgrade-copy">
                   <strong>{upgrade.label}</strong>
                   <small>{upgrade.note} · L{level}</small>
                 </span>
@@ -49,7 +59,7 @@ export function UpgradePanel() {
             );
           })}
         </div>
-      )}
+      </div>
     </section>
   );
 }

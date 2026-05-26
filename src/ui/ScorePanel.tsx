@@ -1,4 +1,5 @@
 import { useGameStore } from '../store/gameStore';
+import { UpgradePanel } from './UpgradePanel';
 
 export function ScorePanel() {
   const cash = useGameStore((state) => state.cash);
@@ -15,6 +16,7 @@ export function ScorePanel() {
   return (
     <aside className="score-strip">
       <Stat label="Cash" value={`$${cash.toLocaleString()}`} />
+      <UpgradePanel />
       <Stat label="Fans" value={fans.toLocaleString()} />
       <Stat label="Chaos" value={chaos.toLocaleString()} />
       <Stat label="Best" value={`$${bestDamage.toLocaleString()}`} />

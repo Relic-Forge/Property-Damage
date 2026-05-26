@@ -90,10 +90,8 @@ button {
 
 .bottom-hud {
   bottom: 12px;
-  display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(220px, 340px);
-  gap: 10px;
-  align-items: end;
+  display: flex;
+  align-items: flex-end;
 }
 
 .eyebrow {
@@ -120,7 +118,6 @@ h1 {
   text-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
 }
 
-.panel,
 .score-strip,
 .rail-card {
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -128,11 +125,6 @@ h1 {
   background: rgba(25, 22, 31, 0.78);
   backdrop-filter: blur(16px);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
-}
-
-.panel {
-  padding: 9px;
-  pointer-events: auto;
 }
 
 .panel-header {
@@ -147,39 +139,102 @@ h1 {
   letter-spacing: 0.08em;
 }
 
-.compact-toolbar {
+.menu-bar {
   display: flex;
   align-items: stretch;
   gap: 8px;
 }
 
-.drawer-panel {
-  overflow: hidden;
-  align-self: end;
+.stage-menu {
+  position: relative;
+  pointer-events: auto;
 }
 
-.drawer-toggle {
+.weapon-menu {
+  width: min(680px, 100%);
+}
+
+.upgrade-menu {
+  min-width: 0;
+}
+
+.menu-trigger {
   width: 100%;
-  min-height: 42px;
+  min-height: 54px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border: 0;
+  gap: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 7px 10px;
   color: #f8f1dc;
-  background: rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(135deg, rgba(255, 92, 138, 0.22), rgba(93, 224, 230, 0.13)),
+    rgba(25, 22, 31, 0.84);
   cursor: pointer;
   text-align: left;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(16px);
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
 }
 
-.drawer-toggle span,
-.drawer-toggle small {
+.menu-trigger:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 225, 125, 0.58);
+  background:
+    linear-gradient(135deg, rgba(255, 92, 138, 0.3), rgba(93, 224, 230, 0.2)),
+    rgba(25, 22, 31, 0.92);
+}
+
+.menu-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
+}
+
+.trigger-thumb,
+.trigger-mark,
+.upgrade-mark {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.trigger-thumb {
+  width: 64px;
+  height: 40px;
+  overflow: hidden;
+}
+
+.trigger-thumb img {
+  width: 82%;
+  height: 82%;
+  object-fit: contain;
+  filter: drop-shadow(0 5px 5px rgba(0, 0, 0, 0.45));
+}
+
+.trigger-mark,
+.upgrade-mark {
+  width: 34px;
+  height: 34px;
+  color: #19161f;
+  background: #ffe17d;
+  font-size: 18px;
+  font-weight: 1000;
+}
+
+.trigger-copy {
+  min-width: 0;
+  overflow: hidden;
   display: block;
 }
 
-.drawer-toggle span {
+.trigger-copy span,
+.menu-popover-header span {
+  display: block;
   font-size: 12px;
   font-weight: 1000;
   text-transform: uppercase;
@@ -187,8 +242,18 @@ h1 {
   white-space: nowrap;
 }
 
-.drawer-toggle small {
-  max-width: 48%;
+.trigger-copy strong {
+  display: block;
+  margin-top: 1px;
+  color: #ffffff;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.trigger-copy small,
+.menu-popover-header small {
+  display: block;
+  margin-top: 4px;
   color: rgba(248, 241, 220, 0.68);
   font-size: 11px;
   font-weight: 800;
@@ -197,13 +262,51 @@ h1 {
   white-space: nowrap;
 }
 
-.drawer-toggle:hover {
-  background: rgba(255, 255, 255, 0.14);
+.menu-popover {
+  position: absolute;
+  z-index: 12;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(25, 22, 31, 0.92);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(18px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px) scale(0.98);
+  transform-origin: 50% 100%;
+  transition: opacity 160ms ease, transform 180ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 
-.drawer-toggle:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
+.stage-menu.is-open .menu-popover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.weapon-popover {
+  left: 0;
+  bottom: calc(100% + 9px);
+  width: min(720px, calc(100vw - 56px));
+}
+
+.upgrade-popover {
+  top: calc(100% + 9px);
+  right: 0;
+  width: min(430px, calc(100vw - 40px));
+  transform-origin: 88% 0;
+}
+
+.stage-menu.is-collapsed .upgrade-popover {
+  transform: translateY(-10px) scale(0.98);
+}
+
+.menu-popover-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
 }
 
 .chaos-open {
@@ -223,16 +326,20 @@ h1 {
   font-weight: 900;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
 }
 
-.gear-grid {
+.tiny-button:hover {
+  background: #fff0a3;
+}
+
+.weapon-list {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 8px;
+  gap: 8px;
 }
 
-.gear-card,
+.weapon-card,
 .upgrade-row {
   border: 1px solid rgba(255, 255, 255, 0.13);
   color: #f8f1dc;
@@ -241,46 +348,84 @@ h1 {
   transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
 }
 
-.gear-card:hover,
+.weapon-card:hover,
 .upgrade-row:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.12);
 }
 
-.gear-card:disabled,
+.weapon-card:disabled,
 .upgrade-row:disabled {
   cursor: not-allowed;
-  opacity: 0.45;
   transform: none;
 }
 
-.gear-card {
-  min-height: 50px;
-  border-radius: 8px;
-  padding: 8px;
-  text-align: center;
+.weapon-card:disabled {
+  opacity: 0.45;
 }
 
-.gear-card strong,
-.gear-card span {
+.upgrade-row:disabled {
+  opacity: 0.72;
+}
+
+.weapon-card {
+  min-height: 168px;
+  display: grid;
+  grid-template-rows: 74px 1fr;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 9px;
+  text-align: left;
+}
+
+.weapon-thumb {
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255, 225, 125, 0.18), transparent 58%),
+    rgba(255, 255, 255, 0.07);
+}
+
+.weapon-thumb img {
+  width: 94%;
+  height: 66px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 6px rgba(0, 0, 0, 0.5));
+}
+
+.weapon-copy strong,
+.weapon-copy em,
+.weapon-copy small {
   display: block;
 }
 
-.gear-card strong {
-  font-size: 12px;
-  line-height: 1;
+.weapon-copy strong {
+  font-size: 13px;
+  line-height: 1.05;
 }
 
-.gear-card span {
+.weapon-copy em {
   margin-top: 5px;
-  color: rgba(248, 241, 220, 0.68);
-  font-size: 10px;
+  color: #ffe17d;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
   line-height: 1.1;
 }
 
-.gear-card.is-selected {
+.weapon-copy small {
+  margin-top: 5px;
+  color: rgba(248, 241, 220, 0.68);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.weapon-card.is-selected {
   border-color: rgba(255, 225, 125, 0.9);
-  background: linear-gradient(135deg, rgba(255, 92, 138, 0.35), rgba(255, 225, 125, 0.2));
+  background:
+    linear-gradient(135deg, rgba(255, 92, 138, 0.33), rgba(255, 225, 125, 0.18)),
+    rgba(255, 255, 255, 0.08);
 }
 
 .upgrade-list {
@@ -291,34 +436,42 @@ h1 {
 
 .upgrade-row {
   width: 100%;
-  min-height: 40px;
+  min-height: 54px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   border-radius: 8px;
-  padding: 7px 9px;
+  padding: 8px 10px;
   text-align: left;
 }
 
-.upgrade-row small,
-.upgrade-row strong {
+.upgrade-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.upgrade-copy small,
+.upgrade-copy strong {
   display: block;
 }
 
-.upgrade-row small {
+.upgrade-copy small {
   color: rgba(248, 241, 220, 0.62);
   font-size: 10px;
+  line-height: 1.2;
 }
 
 .upgrade-row b {
   color: #ffe17d;
+  white-space: nowrap;
 }
 
 .score-strip {
-  min-width: 360px;
+  position: relative;
+  min-width: 520px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(72px, 1fr));
+  grid-template-columns: 78px 172px repeat(3, 72px);
   gap: 7px;
   padding: 8px;
   pointer-events: auto;
@@ -443,7 +596,7 @@ h1 {
     right: 10px;
   }
   .bottom-hud {
-    grid-template-columns: 1fr;
+    display: flex;
   }
   .score-strip {
     min-width: 0;
@@ -460,8 +613,13 @@ h1 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .gear-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .weapon-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .weapon-popover,
+  .upgrade-popover {
+    width: calc(100vw - 40px);
   }
 }
 

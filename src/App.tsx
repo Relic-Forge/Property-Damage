@@ -4,7 +4,6 @@ import { createPropertyDamageGame } from './game/createGame';
 import { useGameStore } from './store/gameStore';
 import { GearSelector } from './ui/GearSelector';
 import { ScorePanel } from './ui/ScorePanel';
-import { UpgradePanel } from './ui/UpgradePanel';
 import { EventFeed } from './ui/EventFeed';
 
 export default function App() {
@@ -56,7 +55,6 @@ export default function App() {
         </div>
         <div className="bottom-hud">
           <GearSelector />
-          <UpgradePanel />
         </div>
         {roundState === 'settling' && <div className="round-banner">Calculating bad decisions...</div>}
       </section>
