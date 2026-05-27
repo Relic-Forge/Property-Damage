@@ -69,7 +69,7 @@ const RUSH_PROPS: RushPropConfig[] = [
   { kind: 'expensiveVase', label: 'Paint Can', textureKey: 'prop-paint-can', assetPath: '/assets/garage-band/props-raster/paint_can_intact.png', width: 78, height: 84, mass: 14, health: 18, value: 1250, speed: 3.15, wobble: 0.065, bounciness: 0.62, fragility: 2.1, debrisKind: 'glass', bonusTag: 'tinyTarget' }
 ];
 
-const ROUND_DURATION_SECONDS = 90;
+const ROUND_DURATION_SECONDS = 30;
 const MAX_ACTIVE_RUSH_OBJECTS = 10;
 const BASE_RELOAD_MS = 1200;
 const COMBO_WINDOW_MS = 2500;
@@ -81,6 +81,12 @@ const LAUNCHER = new Phaser.Math.Vector2(118, 575);
 const MAX_PULL_DISTANCE = 340;
 const LAUNCH_VELOCITY_DIVISOR = 10.4;
 const PERFORMER_SCALE = 0.32;
+const PERFORMER_POSE_SCALE: Record<PerformerPose, number> = {
+  idle: PERFORMER_SCALE,
+  pull: PERFORMER_SCALE * 1.32,
+  throw: PERFORMER_SCALE * 1.33,
+  recover: PERFORMER_SCALE * 1.24
+};
 const AIM_THEME = {
   shadow: 0x19161f,
   warm: 0xffe17d,
@@ -555,10 +561,10 @@ export class DamageRushScene extends Phaser.Scene {
   private setPerformerPose(pose: PerformerPose) {
     this.performerPose = pose;
     this.performer?.setPosition(86, 640).setTexture(`performer-${pose}`);
-    if (pose === 'idle') this.performer?.setAngle(0).setScale(PERFORMER_SCALE);
-    if (pose === 'pull') this.performer?.setAngle(-2).setScale(PERFORMER_SCALE * 1.02, PERFORMER_SCALE * 0.99);
-    if (pose === 'throw') this.performer?.setAngle(3).setScale(PERFORMER_SCALE * 1.04, PERFORMER_SCALE * 0.98);
-    if (pose === 'recover') this.performer?.setAngle(1).setScale(PERFORMER_SCALE);
+    if (pose === 'idle') this.performer?.setAngle(0).setScale(PERFORMER_POSE_SCALE.idle);
+    if (pose === 'pull') this.performer?.setAngle(-2).setScale(PERFORMER_POSE_SCALE.pull);
+    if (pose === 'throw') this.performer?.setAngle(3).setScale(PERFORMER_POSE_SCALE.throw);
+    if (pose === 'recover') this.performer?.setAngle(1).setScale(PERFORMER_POSE_SCALE.recover);
   }
 
   private getHeldGearPoint(pose = this.performerPose) {
@@ -607,7 +613,7 @@ export class DamageRushScene extends Phaser.Scene {
       .setScale((Math.max(config.width, config.height) / 320) * (1 + eased * 0.16));
     this.performer
       ?.setAngle(-2 - eased * 5)
-      .setScale(PERFORMER_SCALE * (1.02 + eased * 0.08), PERFORMER_SCALE * (0.99 - eased * 0.06));
+      .setScale(PERFORMER_POSE_SCALE.pull);
   }
 
   private animatePerformerThrow(pull: Phaser.Math.Vector2) {

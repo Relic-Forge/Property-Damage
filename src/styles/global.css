@@ -80,8 +80,8 @@ button {
 
 .game-canvas canvas {
   display: block;
-  max-width: 100%;
-  max-height: 100%;
+  width: 100% !important;
+  height: 100% !important;
   margin: auto !important;
   cursor: grab;
   touch-action: none;

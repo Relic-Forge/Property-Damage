@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Phaser from 'phaser';
-import { createPropertyDamageGame, GAME_HEIGHT, GAME_WIDTH } from './game/createGame';
+import { createPropertyDamageGame } from './game/createGame';
 import { GameMode, StartMode } from './game/modes';
 import { useGameStore } from './store/gameStore';
 import { gear, GearSelector } from './ui/GearSelector';
@@ -280,8 +280,8 @@ export default function App() {
     if (rect.width <= 0 || rect.height <= 0) return;
     const isInsideCanvas = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
     if (type === 'down' && !isInsideCanvas) return;
-    const x = Phaser.Math.Clamp(((event.clientX - rect.left) / rect.width) * GAME_WIDTH, 0, GAME_WIDTH);
-    const y = Phaser.Math.Clamp(((event.clientY - rect.top) / rect.height) * GAME_HEIGHT, 0, GAME_HEIGHT);
+    const x = Phaser.Math.Clamp(((event.clientX - rect.left) / rect.width) * canvas.width, 0, canvas.width);
+    const y = Phaser.Math.Clamp(((event.clientY - rect.top) / rect.height) * canvas.height, 0, canvas.height);
     if (type === 'down') event.currentTarget.setPointerCapture(event.pointerId);
     if (type === 'down') unlockImpactAudio();
     if (type === 'up' && event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -296,17 +296,29 @@ export default function App() {
     if (!mountRef.current) return;
     gameRef.current?.destroy(true);
     gameRef.current = createPropertyDamageGame(mountRef.current, startMode);
+    gameRef.current.scale.resize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     activeModeRef.current = startMode;
   }, []);
 
   useEffect(() => {
     if (!mountRef.current || gameRef.current) return;
     gameRef.current = createPropertyDamageGame(mountRef.current, 'wreckRoom');
+    gameRef.current.scale.resize(mountRef.current.clientWidth, mountRef.current.clientHeight);
 
     return () => {
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    const resizeGame = () => gameRef.current?.scale.resize(mount.clientWidth, mount.clientHeight);
+    resizeGame();
+    const observer = new ResizeObserver(resizeGame);
+    observer.observe(mount);
+    return () => observer.disconnect();
   }, []);
 
   const selectMode = useCallback((startMode: StartMode) => {

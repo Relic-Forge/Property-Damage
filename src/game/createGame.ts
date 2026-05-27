@@ -22,7 +22,7 @@ export function createPropertyDamageGame(parent: HTMLElement, startMode: StartMo
       }
     },
     scale: {
-      mode: Phaser.Scale.ENVELOP,
+      mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH
     },
     scene: [],
