@@ -16,6 +16,7 @@ type GearConfig = {
   height: number;
   visualWidth?: number;
   visualHeight?: number;
+  visualSize?: number;
   mass: number;
   bounciness: number;
   color: string;
@@ -27,6 +28,7 @@ const GEAR: Record<GearType, GearConfig> = {
     label: 'GUITAR',
     width: 120,
     height: 34,
+    visualSize: 176,
     mass: 24,
     bounciness: 0.72,
     color: '#ffb84d',
@@ -56,6 +58,7 @@ const GEAR: Record<GearType, GearConfig> = {
     height: 18,
     visualWidth: 170,
     visualHeight: 72,
+    visualSize: 188,
     mass: 22,
     bounciness: 0.58,
     color: '#d8d8ea',
@@ -473,6 +476,10 @@ export class PropertyDamageScene extends Phaser.Scene {
     return targetPixels * (Math.max(config.width, config.height) / 320);
   }
 
+  private getThrownGearScale(config: GearConfig) {
+    return (config.visualSize ?? Math.max(config.visualWidth ?? config.width, config.visualHeight ?? config.height)) / 320;
+  }
+
   private advanceGearVariant(gearType: GearType) {
     this.gearVariantByType[gearType] = (this.gearVariantByType[gearType] % GEAR_VARIANTS.length) + 1;
   }
@@ -519,9 +526,10 @@ export class PropertyDamageScene extends Phaser.Scene {
     this.activeGear.setName(`gear-${gearType}`);
     this.activeGear.setData('gearType', gearType);
     this.activeGear.setData('behavior', config.behavior);
-    this.activeGear.setDisplaySize(config.visualWidth ?? config.width, config.visualHeight ?? config.height);
     if (config.behavior === 'ricochet') this.activeGear.setCircle(39);
+    if (config.behavior === 'balanced') this.activeGear.setRectangle(config.width, config.height);
     if (config.behavior === 'spear') this.activeGear.setRectangle(config.width, config.height);
+    this.activeGear.setScale(this.getThrownGearScale(config));
     this.activeGear.setFrictionAir(0.01);
     this.activeGear.setBounce(config.bounciness);
     this.activeGear.setMass(config.mass * (1 + weightBonus));
