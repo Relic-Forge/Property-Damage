@@ -75,6 +75,9 @@ const MAX_ACTIVE_RUSH_OBJECTS = 10;
 const BASE_RELOAD_MS = 1200;
 const COMBO_WINDOW_MS = 2500;
 const MAX_COMBO_MULTIPLIER = 5;
+const WORLD_WIDTH = 1280;
+const WORLD_HEIGHT = 720;
+const BACKGROUND_ASPECT_RATIO = 1891 / 831;
 const LANES = [190, 305, 420, 535, 625];
 const SPAWN_X = 1480;
 const FLOOR_Y = 694;
@@ -102,6 +105,10 @@ export class DamageRushScene extends Phaser.Scene {
   private reloadSpinner!: Phaser.GameObjects.Graphics;
   private timerText!: Phaser.GameObjects.Text;
   private scoreText!: Phaser.GameObjects.Text;
+  private backgroundImage: Phaser.GameObjects.Image | null = null;
+  private backgroundWash: Phaser.GameObjects.Rectangle | null = null;
+  private floorBody: MatterJS.BodyType | null = null;
+  private worldBounds = new Phaser.Geom.Rectangle(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
   private activeGear: Phaser.Physics.Matter.Sprite | null = null;
   private thrownGearPile: Phaser.Physics.Matter.Sprite[] = [];
   private activeProps: Phaser.Physics.Matter.Image[] = [];
@@ -141,6 +148,7 @@ export class DamageRushScene extends Phaser.Scene {
   };
   private resetHandler = () => this.resetRush();
   private roundArmedHandler = () => this.armRound();
+  private resizeHandler = (gameSize: Phaser.Structs.Size) => this.layoutWorld(gameSize.width, gameSize.height);
   private keyHandler = (event: KeyboardEvent) => {
     if ((event.code === 'Space' || event.code === 'Enter') && !this.roundOver) {
       event.preventDefault();
@@ -182,9 +190,8 @@ export class DamageRushScene extends Phaser.Scene {
   }
 
   create() {
-    this.matter.world.setBounds(0, 0, 1280, 720, 42, false, false, true, true);
-    this.matter.add.rectangle(640, FLOOR_Y + 22, 1280, 44, { isStatic: true, restitution: 0.38, friction: 0.78 });
     this.drawBackground();
+    this.layoutWorld(this.scale.width, this.scale.height);
     this.createPerformer();
     this.aimLine = this.add.graphics().setDepth(20);
     this.createHud();
@@ -193,14 +200,44 @@ export class DamageRushScene extends Phaser.Scene {
     window.addEventListener('pd:reset-rush', this.resetHandler);
     window.addEventListener('pd:round-armed', this.roundArmedHandler);
     window.addEventListener('keydown', this.keyHandler);
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.resizeHandler);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.clearTimers();
       window.removeEventListener('pd:stage-pointer', this.stagePointerHandler);
       window.removeEventListener('pd:reset-rush', this.resetHandler);
       window.removeEventListener('pd:round-armed', this.roundArmedHandler);
       window.removeEventListener('keydown', this.keyHandler);
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.resizeHandler);
     });
     this.resetRush();
+  }
+
+  private layoutWorld(width: number, height: number) {
+    const viewportWidth = Math.max(1, width);
+    const viewportHeight = Math.max(1, height);
+    const camera = this.cameras.main;
+    const zoom = viewportHeight / WORLD_HEIGHT;
+    const visibleWorldWidth = viewportWidth / zoom;
+    const worldWidth = Math.max(WORLD_WIDTH, visibleWorldWidth);
+    const worldLeft = (WORLD_WIDTH - worldWidth) / 2;
+
+    this.worldBounds.setTo(worldLeft, 0, worldWidth, WORLD_HEIGHT);
+    camera.setViewport(0, 0, viewportWidth, viewportHeight);
+    camera.setBounds(this.worldBounds.x, this.worldBounds.y, this.worldBounds.width, this.worldBounds.height);
+    camera.setZoom(zoom);
+    camera.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
+
+    this.matter.world.setBounds(this.worldBounds.x, 0, this.worldBounds.width, WORLD_HEIGHT, 42, false, false, true, true);
+    if (this.floorBody) this.matter.world.remove(this.floorBody);
+    this.floorBody = this.matter.add.rectangle(WORLD_WIDTH / 2, FLOOR_Y + 22, this.worldBounds.width, 44, {
+      isStatic: true,
+      restitution: 0.38,
+      friction: 0.78
+    });
+
+    const backgroundWidth = Math.max(this.worldBounds.width, WORLD_HEIGHT * BACKGROUND_ASPECT_RATIO);
+    this.backgroundImage?.setPosition(WORLD_WIDTH / 2, WORLD_HEIGHT / 2).setDisplaySize(backgroundWidth, WORLD_HEIGHT);
+    this.backgroundWash?.setPosition(WORLD_WIDTH / 2, WORLD_HEIGHT / 2).setDisplaySize(backgroundWidth, WORLD_HEIGHT);
   }
 
   update(time: number) {
@@ -229,7 +266,7 @@ export class DamageRushScene extends Phaser.Scene {
       if (!meta || meta.cleared || meta.escaped || !prop.body) return;
       prop.setVelocityX(Math.min(prop.body.velocity.x, -meta.speed));
       if (meta.wobble) prop.setAngularVelocity(Math.sin(time / 240 + prop.y) * meta.wobble);
-      if (prop.x + prop.displayWidth / 2 < 0) this.escapeProp(prop, meta);
+      if (prop.x + prop.displayWidth / 2 < this.worldBounds.left) this.escapeProp(prop, meta);
     });
 
     this.updateThrownGearPile(time);
@@ -372,7 +409,7 @@ export class DamageRushScene extends Phaser.Scene {
   private updateThrownGearPile(time: number) {
     this.thrownGearPile = this.thrownGearPile.filter((gear) => {
       if (!gear.active || !gear.body) return false;
-      if (gear.x > 1500 || gear.y > 860 || gear.x < -220) {
+      if (gear.x > this.worldBounds.right + 220 || gear.y > 860 || gear.x < this.worldBounds.left - 220) {
         if (gear === this.activeGear) this.activeGear = null;
         gear.destroy();
         return false;
@@ -778,8 +815,8 @@ export class DamageRushScene extends Phaser.Scene {
   }
 
   private drawBackground() {
-    this.add.image(640, 360, 'garage-background').setDisplaySize(1280, 720).setAlpha(0.96).setDepth(-10);
-    this.add.rectangle(640, 360, 1280, 720, 0x111018, 0.02).setDepth(-9);
+    this.backgroundImage = this.add.image(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, 'garage-background').setAlpha(0.96).setDepth(-10);
+    this.backgroundWash = this.add.rectangle(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 0x111018, 0.02).setDepth(-9);
   }
 
   private createFloatingText(x: number, y: number, text: string) {
