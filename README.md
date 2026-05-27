@@ -1,38 +1,28 @@
 # Property Damage
 
-A 2D physics chaos game where the player flings memorable objects into fragile environments and tries to create the funniest, most expensive chain-reaction destruction possible.
+Property Damage is a browser-playable 2D physics chaos game about launching questionable band gear into fragile rooms and trying to create the funniest, most expensive chain reaction possible.
 
 The first playable pack is **Garage Band**: guitars, bass amps, cymbals, mic stands, fog machines, cheap garage props, bad adult decisions, and clean non-offensive humor.
 
-The game now opens on a real title menu with two playable modes:
+## Playable Modes
 
-- **Wreck Room**: the original one-throw garage destruction mode.
-- **Damage Rush**: a side-scrolling arcade mode where valuable props roll in from the right while the player launches band gear from the left to clear them before they escape offscreen.
+- **Wreck Room**: a one-throw garage destruction sandbox built around aim, launch power, breakable props, combo scoring, and upgrades.
+- **Damage Rush**: a side-scrolling arcade mode where valuable props roll in from the right while the player launches band gear from the left to clear them before they escape.
 
-## V1 target
+## Current Status
 
-V1 is not a full game. V1 is a playable proof that the core mechanic is fun on repeat.
+This repo is an early public prototype. The target is not a finished commercial game yet; it is a proof that the core loop is fun on repeat.
 
-The player should be able to:
+The current build includes:
 
-- Open the game in a browser.
-- Choose Wreck Room or Damage Rush from the main menu.
-- Pick one of five band-related objects.
-- Pull back from the launcher and fling the object into the garage.
-- Watch objects bounce, break, scatter, and trigger funny scoring events.
-- See damage totals, combo bonuses, cash, fans, and chaos update.
-- Buy simple upgrades that make the next throw more destructive.
-- Replay the same room and still get different outcomes because physics, break thresholds, bounce, spin, and upgrade values shift the result.
+- A title menu with mode selection.
+- Five launchable gear choices: guitar, bass amp, cymbal, mic stand, and fog machine.
+- Phaser Matter physics for throws, collisions, prop breaks, debris, and score events.
+- Live score, cash, best damage, combo, fans, chaos, and upgrade progression.
+- Generated Garage Band art assets in `public/assets/garage-band`.
+- A GitHub Pages workflow that builds and publishes the Vite app from `main`.
 
-Damage Rush adds a longer arcade loop:
-
-- Incoming props spawn in lanes and move left.
-- Gear reloads between launches.
-- Props cleared by Matter collisions award score, cash, fans, combo credit, and feed events.
-- Props count as escapes only after they leave the left side of the screen.
-- The round ends when the timer reaches zero or five props escape, then shows a replay/menu summary.
-
-## Tech stack
+## Tech Stack
 
 - Vite
 - React
@@ -41,89 +31,100 @@ Damage Rush adds a longer arcade loop:
 - Phaser Matter physics
 - Zustand
 
-## Local setup
+## Local Development
 
 ```bash
 npm install
 npm run dev
 ```
 
-Then open the local Vite URL.
+Then open the local Vite URL. By default the dev server uses port `5173`.
 
-## Build
+## Validation
 
 ```bash
+npm run lint
+npm run typecheck
 npm run build
+```
+
+Preview the production build locally with:
+
+```bash
 npm run preview
 ```
 
-## Repo setup
+## GitHub Pages
 
-Recommended GitHub repo:
+The app is configured for GitHub Pages under:
 
 ```txt
-Relic-Forge/property-damage
+https://relic-forge.github.io/Property-Damage/
 ```
 
-Create the repo in the Relic Forge org, copy this package into the repo root, then commit:
+The `Deploy to GitHub Pages` workflow runs on pushes to `main`. It installs dependencies with `npm ci`, runs lint/typecheck/build, uploads `dist`, and deploys the static site.
 
-```bash
-git add .
-git commit -m "Initialize Property Damage V1 scaffold"
-git push origin main
-```
-
-## Core game loop
+## Core Game Loop
 
 ```txt
 Choose object
-→ Pull and fling
-→ Physics chaos happens
-→ Environment breaks
-→ Damage score appears
-→ Round settles
-→ Damage report pays cash/fans/chaos
-→ Buy upgrades
-→ Try again for a better/funnier chain reaction
+-> Pull and fling
+-> Physics chaos happens
+-> Environment breaks
+-> Damage score appears
+-> Round settles
+-> Damage report pays cash/fans/chaos
+-> Buy upgrades
+-> Try again for a better chain reaction
 ```
 
-## What hooks the player
+## Design Rules
 
-This game should not hook people with complex strategy. It hooks them with curiosity.
+The game should hook players through curiosity rather than complex strategy.
 
-The player should think:
+Good player questions:
 
-- “What happens if I launch the amp higher?”
-- “Can I break the window and the neon sign in one shot?”
-- “The cymbal bounced like a maniac. Can I make that happen again?”
-- “What if I upgrade fragility before using the fog machine?”
-- “I barely missed the TV. One more try.”
+- What happens if I launch the amp higher?
+- Can I break the window and the neon sign in one shot?
+- The cymbal bounced wildly. Can I make that happen again?
+- What if I upgrade fragility before using the fog machine?
+- I barely missed the TV. One more try.
 
-The same level stays replayable because the physics outcome changes based on launch angle, object type, spin, collision order, break thresholds, combo timing, and upgrades.
+The same level should stay replayable because physics outcomes change based on launch angle, object type, spin, collision order, break thresholds, combo timing, and upgrades.
 
-## Humor rule
+## Humor Rule
 
 Funny, not mean. Chaotic, not offensive.
 
-Use clean smirk humor: bad band decisions, embarrassing gear choices, property damage math, weird insurance wording, landlord energy, local viral clips, garage chaos, wedding disaster, office meltdown, moving day regret.
+Use clean smirk humor: bad band decisions, embarrassing gear choices, property damage math, weird insurance wording, landlord energy, local viral clips, garage chaos, wedding disaster, office meltdown, and moving day regret.
 
 Avoid politics, insults toward protected groups, gore, cruelty, graphic injuries, sexual jokes, or punching down.
 
-## Current prototype
-
-The scaffold includes one working garage scene using generated placeholder textures. The code is intentionally simple so Codex can replace placeholders with real assets later without changing the game loop.
-
-Key files:
+## Project Map
 
 ```txt
-src/game/PropertyDamageScene.ts   Phaser + Matter physics scene
-src/game/DamageRushScene.ts       Side-scrolling arcade physics mode
-src/game/createGame.ts            Phaser boot and mode scene routing
-src/store/gameStore.ts            Zustand economy/progression state
-src/ui/MainMenu.tsx               Title menu and mode selection
-src/ui/GearSelector.tsx           Object picker
-src/ui/UpgradePanel.tsx           Upgrade shop
-src/ui/ScorePanel.tsx             HUD stats
-src/ui/EventFeed.tsx              Damage report and incident feed
-docs/                            Build specs and Codex instructions
+src/App.tsx                         React shell, game mount, menus, overlays
+src/game/PropertyDamageScene.ts     Wreck Room Phaser + Matter scene
+src/game/DamageRushScene.ts         Damage Rush arcade physics mode
+src/game/createGame.ts              Phaser boot and scene routing
+src/game/modes.ts                   Shared mode types
+src/store/gameStore.ts              Zustand economy/progression state
+src/ui/MainMenu.tsx                 Title menu and mode selection
+src/ui/GearSelector.tsx             Object picker
+src/ui/UpgradePanel.tsx             Upgrade shop
+src/ui/ScorePanel.tsx               HUD stats
+public/assets/garage-band/          Generated SVG game assets
+docs/                               Design notes, art direction, backlog, prompts
 ```
+
+## Useful Docs
+
+- [Game spec](docs/GAME_SPEC.md)
+- [Art direction](docs/ART_DIRECTION.md)
+- [Asset manifest](docs/ASSET_MANIFEST.md)
+- [V1 done definition](docs/V1_DONE_DEFINITION.md)
+- [Suggested GitHub issues](docs/GITHUB_ISSUES.md)
+
+## License
+
+No open-source license has been selected yet. All rights are reserved unless a license is added later.

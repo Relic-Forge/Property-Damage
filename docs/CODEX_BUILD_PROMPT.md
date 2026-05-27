@@ -1,6 +1,6 @@
 # Codex Build Prompt
 
-Use this prompt after placing the repo files in `Relic-Forge/property-damage`.
+Use this prompt when continuing the public `Relic-Forge/Property-Damage` prototype.
 
 ```txt
 You are building Property Damage, a 2D physics chaos game using Vite + React + TypeScript + Phaser 3 + Matter physics + Zustand.
