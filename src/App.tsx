@@ -28,6 +28,7 @@ export default function App() {
   const summary = useGameStore((state) => state.lastSummary);
   const resetRun = useGameStore((state) => state.resetRun);
   const selectGear = useGameStore((state) => state.selectGear);
+  const setActiveMode = useGameStore((state) => state.setActiveMode);
   const setRoundState = useGameStore((state) => state.setRoundState);
   const addFeed = useGameStore((state) => state.addFeed);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -65,6 +66,7 @@ export default function App() {
   }, []);
 
   const selectMode = useCallback((startMode: StartMode) => {
+    setActiveMode(startMode);
     resetRun();
     gameRef.current?.scene.resume('PropertyDamageScene');
     gameRef.current?.scene.resume('DamageRushScene');
@@ -77,9 +79,10 @@ export default function App() {
     if (startMode !== 'damageRush' || !isSwitchingScene) {
       useGameStore.getState().addFeed(startMode === 'damageRush' ? 'Damage Rush staged. Pick a weapon before the props roll.' : 'Wreck Room staged. Pick the next bad idea.');
     }
-  }, [bootGame, resetRun, setRoundState]);
+  }, [bootGame, resetRun, setActiveMode, setRoundState]);
 
   const returnToMenu = useCallback(() => {
+    setActiveMode('wreckRoom');
     resetRun();
     gameRef.current?.scene.resume('PropertyDamageScene');
     gameRef.current?.scene.resume('DamageRushScene');
@@ -87,7 +90,7 @@ export default function App() {
     setIsPaused(false);
     setMode('menu');
     if (activeModeRef.current !== 'wreckRoom') bootGame('wreckRoom');
-  }, [bootGame, resetRun]);
+  }, [bootGame, resetRun, setActiveMode]);
 
   const beginNewRound = useCallback(() => {
     if (mode === 'damageRush') {
@@ -216,11 +219,15 @@ export default function App() {
           <UpgradePanel />
           {mode !== 'menu' && (
             <button type="button" className="menu-trigger pause-trigger" onClick={openPauseMenu}>
-              <span className="trigger-mark">||</span>
+              <span className="trigger-mark trigger-mark-pause" aria-hidden="true">
+                <svg viewBox="0 0 32 32" focusable="false">
+                  <path d="M12 9v14" />
+                  <path d="M20 9v14" />
+                </svg>
+              </span>
               <span className="trigger-copy">
-                <span>Pause <kbd>M</kbd></span>
-                <strong>Menu</strong>
-                <small>resume or rage quit</small>
+                <span>Pause</span>
+                <kbd>M</kbd>
               </span>
             </button>
           )}

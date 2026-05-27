@@ -41,6 +41,8 @@ type GearConfig = {
   label: string;
   width: number;
   height: number;
+  visualWidth?: number;
+  visualHeight?: number;
   mass: number;
   bounciness: number;
   behavior: 'balanced' | 'crusher' | 'ricochet' | 'spear' | 'burst';
@@ -51,7 +53,7 @@ const GEAR: Record<GearType, GearConfig> = {
   guitar: { label: 'GUITAR', width: 120, height: 34, mass: 24, bounciness: 0.72, behavior: 'balanced', multiplier: 1.12 },
   amp: { label: 'BASS AMP', width: 96, height: 88, mass: 68, bounciness: 0.24, behavior: 'crusher', multiplier: 1.5 },
   cymbal: { label: 'CYMBAL', width: 78, height: 78, mass: 18, bounciness: 0.98, behavior: 'ricochet', multiplier: 0.9 },
-  micStand: { label: 'MIC STAND', width: 150, height: 18, mass: 22, bounciness: 0.5, behavior: 'spear', multiplier: 1.35 },
+  micStand: { label: 'MIC STAND', width: 150, height: 18, visualWidth: 170, visualHeight: 72, mass: 22, bounciness: 0.5, behavior: 'spear', multiplier: 1.35 },
   fogMachine: { label: 'FOG MACHINE', width: 82, height: 54, mass: 34, bounciness: 0.38, behavior: 'burst', multiplier: 1.05 }
 };
 
@@ -67,7 +69,6 @@ const RUSH_PROPS: RushPropConfig[] = [
 ];
 
 const ROUND_DURATION_SECONDS = 90;
-const MAX_ESCAPES = 5;
 const MAX_ACTIVE_RUSH_OBJECTS = 10;
 const BASE_RELOAD_MS = 1200;
 const COMBO_WINDOW_MS = 2500;
@@ -94,6 +95,7 @@ export class DamageRushScene extends Phaser.Scene {
   private timerText!: Phaser.GameObjects.Text;
   private scoreText!: Phaser.GameObjects.Text;
   private activeGear: Phaser.Physics.Matter.Sprite | null = null;
+  private thrownGearPile: Phaser.Physics.Matter.Sprite[] = [];
   private activeProps: Phaser.Physics.Matter.Image[] = [];
   private debris: Phaser.Physics.Matter.Image[] = [];
   private performer: Phaser.GameObjects.Image | null = null;
@@ -199,7 +201,7 @@ export class DamageRushScene extends Phaser.Scene {
     }
     const elapsedSeconds = (time - this.roundStartedAt) / 1000;
     const remaining = Math.max(0, ROUND_DURATION_SECONDS - elapsedSeconds);
-    if (remaining <= 0 || this.rushEscapedCount >= MAX_ESCAPES) {
+    if (remaining <= 0) {
       this.endRound();
       return;
     }
@@ -220,10 +222,7 @@ export class DamageRushScene extends Phaser.Scene {
       if (prop.x + prop.displayWidth / 2 < 0) this.escapeProp(prop, meta);
     });
 
-    if (this.activeGear && (this.activeGear.x > 1450 || this.activeGear.y > 850 || this.activeGear.x < -180)) {
-      this.activeGear.destroy();
-      this.activeGear = null;
-    }
+    this.updateThrownGearPile(time);
 
     if (this.rushCombo && time - this.lastClearAt > COMBO_WINDOW_MS) this.rushCombo = 0;
     if (useGameStore.getState().roundState === 'ready' && !this.isDragging) this.updateReadyGearPreview();
@@ -252,8 +251,10 @@ export class DamageRushScene extends Phaser.Scene {
     this.dragAnchor = null;
     this.activeGear?.destroy();
     this.activeGear = null;
+    this.thrownGearPile.forEach((gear) => gear.destroy());
     this.activeProps.forEach((prop) => prop.destroy());
     this.debris.forEach((piece) => piece.destroy());
+    this.thrownGearPile = [];
     this.activeProps = [];
     this.debris = [];
     this.aimLine?.clear();
@@ -324,8 +325,11 @@ export class DamageRushScene extends Phaser.Scene {
     this.activeGear.setName(`rush-gear-${selectedGear}`);
     this.activeGear.setData('gearType', selectedGear);
     this.activeGear.setData('behavior', config.behavior);
-    this.activeGear.setDisplaySize(config.width, config.height);
+    this.activeGear.setData('launchedAt', this.time.now);
+    this.activeGear.setData('settledGear', false);
+    this.activeGear.setDisplaySize(config.visualWidth ?? config.width, config.visualHeight ?? config.height);
     if (config.behavior === 'ricochet') this.activeGear.setCircle(38);
+    if (config.behavior === 'spear') this.activeGear.setRectangle(config.width, config.height);
     this.activeGear.setFrictionAir(0.008);
     this.activeGear.setBounce(config.bounciness);
     this.activeGear.setMass(config.mass * (1 + useGameStore.getState().upgrades.gearWeight * 0.1));
@@ -334,6 +338,7 @@ export class DamageRushScene extends Phaser.Scene {
       pull.y / LAUNCH_VELOCITY_DIVISOR
     );
     this.activeGear.setAngularVelocity(config.behavior === 'spear' ? 0.18 : pull.x > 0 ? 0.24 : -0.24);
+    this.thrownGearPile.push(this.activeGear);
     this.reloadUntil = this.time.now + BASE_RELOAD_MS;
     this.launchHitIds.clear();
     this.fogBurstUsed = false;
@@ -345,6 +350,30 @@ export class DamageRushScene extends Phaser.Scene {
         this.setPerformerPose('idle');
         this.updateReadyGearPreview();
       }
+    });
+  }
+
+  private updateThrownGearPile(time: number) {
+    this.thrownGearPile = this.thrownGearPile.filter((gear) => {
+      if (!gear.active || !gear.body) return false;
+      if (gear.x > 1500 || gear.y > 860 || gear.x < -220) {
+        if (gear === this.activeGear) this.activeGear = null;
+        gear.destroy();
+        return false;
+      }
+
+      const launchedAt = gear.getData('launchedAt') as number | undefined;
+      const settled = gear.getData('settledGear') as boolean | undefined;
+      const speed = Math.abs(((gear.body as any).speed ?? 0));
+      const age = launchedAt === undefined ? Number.POSITIVE_INFINITY : time - launchedAt;
+      if (!settled && age > 900 && speed < 0.55 && gear.y > FLOOR_Y - 105) {
+        gear.setVelocity(0, 0);
+        gear.setAngularVelocity(0);
+        gear.setStatic(true);
+        gear.setData('settledGear', true);
+        if (gear === this.activeGear) this.activeGear = null;
+      }
+      return true;
     });
   }
 
@@ -603,6 +632,7 @@ export class DamageRushScene extends Phaser.Scene {
 
   private fogBurst(x: number, y: number) {
     useGameStore.getState().addFeed('Fog machine burst: visibility has entered negotiations.');
+    this.wakeNearbyGear(x, y, 210, 0.04);
     [...this.activeProps].forEach((prop) => {
       const meta = prop.getData('rushProp') as RushPropMeta | undefined;
       if (!prop.active || !prop.body || !meta || meta.cleared || meta.escaped) return;
@@ -623,6 +653,7 @@ export class DamageRushScene extends Phaser.Scene {
 
   private cymbalPing(x: number, y: number, sourceProp: Phaser.Physics.Matter.Image) {
     this.createFloatingText(x, y - 36, 'CYMBAL PING');
+    this.wakeNearbyGear(x, y, 150, 0.026);
     [...this.activeProps].forEach((prop) => {
       if (prop === sourceProp || !prop.active || !prop.body) return;
       const meta = prop.getData('rushProp') as RushPropMeta | undefined;
@@ -634,6 +665,27 @@ export class DamageRushScene extends Phaser.Scene {
       const angle = Phaser.Math.Angle.Between(x, y, prop.x, prop.y);
       prop.applyForce(new Phaser.Math.Vector2(Math.cos(angle) * 0.035, Math.sin(angle) * 0.012 - 0.012));
       if (meta.healthLeft <= 0) this.clearProp(prop, meta, pingDamage, 'cymbal');
+    });
+  }
+
+  private wakeNearbyGear(x: number, y: number, radius: number, strength: number) {
+    this.thrownGearPile.forEach((gear) => {
+      if (!gear.active || !gear.body || gear === this.activeGear) return;
+      const distance = Phaser.Math.Distance.Between(x, y, gear.x, gear.y);
+      if (distance > radius) return;
+      if (gear.getData('settledGear')) {
+        gear.setStatic(false);
+        gear.setData('settledGear', false);
+        gear.setData('launchedAt', this.time.now);
+      }
+      const falloff = Phaser.Math.Linear(1, 0.24, distance / radius);
+      const angle = Phaser.Math.Angle.Between(x, y, gear.x, gear.y);
+      gear.applyForce(new Phaser.Math.Vector2(
+        Math.cos(angle) * strength * falloff,
+        Math.sin(angle) * strength * 0.45 * falloff - strength * 0.24 * falloff
+      ));
+      const angularVelocity = ((gear.body as any).angularVelocity ?? 0) as number;
+      gear.setAngularVelocity(Phaser.Math.Clamp(angularVelocity + Phaser.Math.FloatBetween(-0.08, 0.08), -0.22, 0.22));
     });
   }
 
@@ -677,7 +729,7 @@ export class DamageRushScene extends Phaser.Scene {
   }
 
   private updateHud(remaining: number, time: number) {
-    this.hudText.setText(`DAMAGE RUSH   ESCAPES ${this.rushEscapedCount}/${MAX_ESCAPES}`);
+    this.hudText.setText(`DAMAGE RUSH   ESCAPES ${this.rushEscapedCount}`);
     this.timerText.setText(`TIME ${Math.ceil(remaining)}`);
     this.scoreText.setText(`SCORE $${this.rushScore.toLocaleString()}`);
     const reloading = Math.max(0, this.reloadUntil - time);
@@ -722,7 +774,7 @@ export class DamageRushScene extends Phaser.Scene {
     if (this.rushScore > 42000) return 'Insurance Adjuster Nightmare';
     if (this.rushScore > 25000) return 'Security Deposit Gone';
     if (this.rushClearedCount >= 18) return 'Clearance Rack Catastrophe';
-    if (this.rushEscapedCount >= MAX_ESCAPES) return 'Too Many Valuable Things Survived';
+    if (this.rushEscapedCount >= 12) return 'Too Many Valuable Things Survived';
     return 'That Looked Expensive';
   }
 
@@ -730,7 +782,7 @@ export class DamageRushScene extends Phaser.Scene {
     const bonuses = [
       `Props cleared: ${this.rushClearedCount}.`,
       `Best combo: x${Math.max(1, this.rushBestCombo)}.`,
-      `Escapes: ${this.rushEscapedCount}/${MAX_ESCAPES}.`
+      `Escapes: ${this.rushEscapedCount}.`
     ];
     if (this.rushBestSingleImpact > 900) bonuses.push(`Best single impact: $${this.rushBestSingleImpact.toLocaleString()}.`);
     if (this.launchHitIds.size >= 3) bonuses.push('Multi-prop launch: legally confusing.');

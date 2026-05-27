@@ -14,7 +14,6 @@ export function UpgradePanel() {
   const cash = useGameStore((state) => state.cash);
   const levels = useGameStore((state) => state.upgrades);
   const buyUpgrade = useGameStore((state) => state.buyUpgrade);
-  const totalLevels = upgrades.reduce((total, upgrade) => total + levels[upgrade.key], 0);
 
   useEffect(() => {
     const toggle = () => setIsOpen((open) => !open);
@@ -30,11 +29,19 @@ export function UpgradePanel() {
         aria-expanded={isOpen}
         onClick={() => setIsOpen((open) => !open)}
       >
-        <span className="trigger-mark">!</span>
+        <span className="trigger-mark trigger-mark-mods" aria-hidden="true">
+          <svg viewBox="0 0 32 32" focusable="false">
+            <path d="M9 7v18" />
+            <path d="M16 7v18" />
+            <path d="M23 7v18" />
+            <path d="M6.5 13h5" />
+            <path d="M13.5 20h5" />
+            <path d="M20.5 11h5" />
+          </svg>
+        </span>
         <span className="trigger-copy">
-          <span>Mods <kbd>U</kbd></span>
-          <strong>{totalLevels} levels</strong>
-          <small>${cash.toLocaleString()} in the jar</small>
+          <span>Mods</span>
+          <kbd>U</kbd>
         </span>
       </button>
       <div className="menu-popover upgrade-popover" aria-hidden={!isOpen}>

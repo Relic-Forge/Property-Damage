@@ -52,7 +52,6 @@ export function GearSelector() {
   const selectedGear = useGameStore((state) => state.selectedGear);
   const selectGear = useGameStore((state) => state.selectGear);
   const roundState = useGameStore((state) => state.roundState);
-  const currentGear = gear.find((item) => item.key === selectedGear) ?? gear[0];
   const isLocked = roundState !== 'ready';
 
   useEffect(() => {
@@ -102,13 +101,16 @@ export function GearSelector() {
           disabled={isLocked}
           onClick={() => setIsOpen((open) => !open)}
         >
-          <span className="trigger-thumb">
-            <img src={currentGear.image} alt="" />
+          <span className="trigger-mark trigger-mark-objects" aria-hidden="true">
+            <svg viewBox="0 0 32 32" focusable="false">
+              <path d="M7 9.5 15.8 5l9.2 4.6-8.9 4.6L7 9.5Z" />
+              <path d="M7 13.2 16.1 18l8.9-4.8v7.6l-9 5.2-9-5.1v-7.7Z" />
+              <path d="M16.1 18v8" />
+            </svg>
           </span>
           <span className="trigger-copy">
-            <span>Objects <kbd>W</kbd></span>
-            <strong>{currentGear.label}</strong>
-            <small>1-5 select · {currentGear.effect}</small>
+            <span>Objects</span>
+            <kbd>W</kbd>
           </span>
         </button>
       </div>

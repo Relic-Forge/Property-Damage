@@ -2,9 +2,10 @@ import { create } from 'zustand';
 
 export type GearType = 'guitar' | 'amp' | 'cymbal' | 'micStand' | 'fogMachine';
 export type RoundState = 'selecting' | 'countdown' | 'ready' | 'launched' | 'settling' | 'summary';
+export type ScoreMode = 'wreckRoom' | 'damageRush';
 
 export type RoundSummary = {
-  mode?: 'wreckRoom' | 'damageRush';
+  mode?: ScoreMode;
   totalDamage: number;
   chaos: number;
   combo: number;
@@ -22,8 +23,16 @@ export type RoundSummary = {
 type UpgradeKey = 'launchPower' | 'gearWeight' | 'fragility' | 'viralChance' | 'insuranceMultiplier';
 
 type Upgrades = Record<UpgradeKey, number>;
+type ModeStats = Record<ScoreMode, { cash: number; bestDamage: number }>;
+
+const initialModeStats: ModeStats = {
+  wreckRoom: { cash: 0, bestDamage: 0 },
+  damageRush: { cash: 0, bestDamage: 0 }
+};
 
 type GameStore = {
+  activeMode: ScoreMode;
+  modeStats: ModeStats;
   selectedGear: GearType;
   roundState: RoundState;
   liveDamage: number;
@@ -38,6 +47,7 @@ type GameStore = {
   feed: string[];
   upgrades: Upgrades;
   selectGear: (gear: GearType) => void;
+  setActiveMode: (mode: ScoreMode) => void;
   setRoundState: (state: RoundState) => void;
   startRound: () => void;
   updateLiveRound: (damage: number, chaos: number, combo: number) => void;
@@ -58,6 +68,8 @@ const upgradeCosts: Record<UpgradeKey, (level: number) => number> = {
 export const getUpgradeCost = (key: UpgradeKey, level: number) => upgradeCosts[key](level);
 
 export const useGameStore = create<GameStore>((set, get) => ({
+  activeMode: 'wreckRoom',
+  modeStats: initialModeStats,
   selectedGear: 'guitar',
   roundState: 'selecting',
   liveDamage: 0,
@@ -81,6 +93,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     insuranceMultiplier: 0
   },
   selectGear: (gear) => set({ selectedGear: gear }),
+  setActiveMode: (activeMode) =>
+    set((state) => ({
+      activeMode,
+      cash: state.modeStats[activeMode].cash,
+      bestDamage: state.modeStats[activeMode].bestDamage
+    })),
   setRoundState: (roundState) => set({ roundState }),
   startRound: () =>
     set({
@@ -95,30 +113,54 @@ export const useGameStore = create<GameStore>((set, get) => ({
   addFeed: (message) =>
     set((state) => ({ feed: [message, ...state.feed].slice(0, 8) })),
   completeRound: (summary) =>
-    set((state) => ({
-      roundState: 'summary',
-      liveDamage: 0,
-      liveChaos: 0,
-      liveCombo: 0,
-      cash: state.cash + Math.floor(summary.totalDamage * 0.12),
-      fans: state.fans + summary.fans,
-      chaos: state.chaos + summary.chaos,
-      combo: summary.combo,
-      bestDamage: Math.max(state.bestDamage, summary.totalDamage),
-      lastSummary: summary,
-      feed: [
-        `${summary.title}: $${summary.totalDamage.toLocaleString()} damage.`,
-        ...summary.bonuses,
-        ...state.feed
-      ].slice(0, 8)
-    })),
+    set((state) => {
+      const mode = summary.mode ?? state.activeMode;
+      const cashEarned = summary.cashEarned ?? Math.floor(summary.totalDamage * 0.12);
+      const currentModeStats = state.modeStats[mode];
+      const nextModeStats = {
+        ...state.modeStats,
+        [mode]: {
+          cash: currentModeStats.cash + cashEarned,
+          bestDamage: Math.max(currentModeStats.bestDamage, summary.totalDamage)
+        }
+      };
+      const activeStats = nextModeStats[state.activeMode];
+
+      return {
+        roundState: 'summary',
+        liveDamage: 0,
+        liveChaos: 0,
+        liveCombo: 0,
+        cash: activeStats.cash,
+        fans: state.fans + summary.fans,
+        chaos: state.chaos + summary.chaos,
+        combo: summary.combo,
+        bestDamage: activeStats.bestDamage,
+        lastSummary: { ...summary, mode },
+        modeStats: nextModeStats,
+        feed: [
+          `${summary.title}: $${summary.totalDamage.toLocaleString()} damage.`,
+          ...summary.bonuses,
+          ...state.feed
+        ].slice(0, 8)
+      };
+    }),
   buyUpgrade: (key) => {
     const state = get();
     const currentLevel = state.upgrades[key];
     const cost = getUpgradeCost(key, currentLevel);
     if (state.cash < cost) return;
+    const currentModeStats = state.modeStats[state.activeMode];
+    const nextCash = currentModeStats.cash - cost;
     set({
-      cash: state.cash - cost,
+      cash: nextCash,
+      modeStats: {
+        ...state.modeStats,
+        [state.activeMode]: {
+          ...currentModeStats,
+          cash: nextCash
+        }
+      },
       upgrades: { ...state.upgrades, [key]: currentLevel + 1 },
       feed: [`Upgrade bought: ${key}.`, ...state.feed].slice(0, 8)
     });

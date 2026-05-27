@@ -14,6 +14,8 @@ type GearConfig = {
   label: string;
   width: number;
   height: number;
+  visualWidth?: number;
+  visualHeight?: number;
   mass: number;
   bounciness: number;
   color: string;
@@ -52,6 +54,8 @@ const GEAR: Record<GearType, GearConfig> = {
     label: 'MIC STAND',
     width: 150,
     height: 18,
+    visualWidth: 170,
+    visualHeight: 72,
     mass: 22,
     bounciness: 0.58,
     color: '#d8d8ea',
@@ -515,8 +519,9 @@ export class PropertyDamageScene extends Phaser.Scene {
     this.activeGear.setName(`gear-${gearType}`);
     this.activeGear.setData('gearType', gearType);
     this.activeGear.setData('behavior', config.behavior);
-    this.activeGear.setDisplaySize(config.width, config.height);
+    this.activeGear.setDisplaySize(config.visualWidth ?? config.width, config.visualHeight ?? config.height);
     if (config.behavior === 'ricochet') this.activeGear.setCircle(39);
+    if (config.behavior === 'spear') this.activeGear.setRectangle(config.width, config.height);
     this.activeGear.setFrictionAir(0.01);
     this.activeGear.setBounce(config.bounciness);
     this.activeGear.setMass(config.mass * (1 + weightBonus));
@@ -617,6 +622,7 @@ export class PropertyDamageScene extends Phaser.Scene {
     const title = this.getRoundTitle(totalDamage);
 
     const summary: RoundSummary = {
+      mode: 'wreckRoom',
       totalDamage,
       chaos: this.roundChaos,
       combo: this.roundCombo,

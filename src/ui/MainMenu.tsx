@@ -45,21 +45,25 @@ export function MainMenu({ onSelectWreckRoom, onSelectDamageRush }: MainMenuProp
     <div className={`main-menu ${selected ? 'is-exiting' : ''}`} onPointerDown={(event) => event.stopPropagation()}>
       <div className="menu-vignette" />
       <section className="title-panel" aria-label="Property Damage main menu">
-        <p className="menu-kicker">Garage Band presents</p>
+        <p className="menu-kicker">Relic Forge Presents</p>
         <h2 className="game-logo" data-text="PROPERTY DAMAGE">PROPERTY DAMAGE</h2>
-        <p className="menu-subtitle">Break it. Score it. Pretend it was already like that.</p>
+        <p className="menu-subtitle">Break it. Score it.</p>
         <div className="mode-grid">
           {menuOptions.map((option) => (
-            <button
-              key={option.key}
-              type="button"
-              className={`mode-button ${selected === option.key ? 'is-selected' : ''}`}
-              disabled={Boolean(selected)}
-              onClick={() => selectMode(option.key)}
-            >
-              <strong>{option.title}</strong>
-              <span>{option.description}</span>
-            </button>
+            <div className="mode-choice" key={option.key}>
+              <button
+                type="button"
+                className={`mode-button ${selected === option.key ? 'is-selected' : ''}`}
+                disabled={Boolean(selected)}
+                aria-describedby={`${option.key}-description`}
+                onClick={() => selectMode(option.key)}
+              >
+                <strong>{option.title}</strong>
+              </button>
+              <p className="mode-description" id={`${option.key}-description`}>
+                {option.description}
+              </p>
+            </div>
           ))}
         </div>
       </section>
@@ -96,4 +100,3 @@ function playMenuSelect() {
     // Browsers can block audio startup; the menu still transitions cleanly.
   }
 }
-
