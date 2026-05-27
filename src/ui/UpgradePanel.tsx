@@ -13,7 +13,9 @@ export function UpgradePanel() {
   const [isOpen, setIsOpen] = useState(false);
   const cash = useGameStore((state) => state.cash);
   const levels = useGameStore((state) => state.upgrades);
+  const roundState = useGameStore((state) => state.roundState);
   const buyUpgrade = useGameStore((state) => state.buyUpgrade);
+  const upgradesLocked = ['countdown', 'launched', 'settling'].includes(roundState);
 
   useEffect(() => {
     const toggle = () => setIsOpen((open) => !open);
@@ -47,18 +49,18 @@ export function UpgradePanel() {
       <div className="menu-popover upgrade-popover" aria-hidden={!isOpen}>
         <div className="menu-popover-header">
           <span>Upgrade Pedals</span>
-          <small>voids warranties tastefully</small>
+          <small>{upgradesLocked ? 'mods locked while chaos is in progress' : 'mods apply to both modes'}</small>
         </div>
         <div className="upgrade-list">
           {upgrades.map((upgrade) => {
             const level = levels[upgrade.key];
             const cost = getUpgradeCost(upgrade.key, level);
-            const canBuy = cash >= cost;
+            const canBuy = !upgradesLocked && cash >= cost;
             return (
               <button
                 key={upgrade.key}
                 type="button"
-              className={`upgrade-row ${canBuy ? '' : 'is-locked'}`}
+                className={`upgrade-row ${canBuy ? '' : 'is-locked'}`}
                 disabled={!canBuy}
                 onClick={() => buyUpgrade(upgrade.key)}
               >

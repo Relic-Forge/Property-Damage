@@ -272,6 +272,9 @@ export default function App() {
     return generateCrackPaths(seed);
   }, [summary]);
   const handleStagePointer = useCallback((event: React.PointerEvent<HTMLDivElement>, type: 'down' | 'move' | 'up') => {
+    if (type === 'up' && event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
     if (mode === 'menu' || isPaused || roundState === 'selecting' || roundState === 'countdown') return;
     event.preventDefault();
     const canvas = mountRef.current?.querySelector('canvas');
@@ -284,9 +287,6 @@ export default function App() {
     const y = Phaser.Math.Clamp(((event.clientY - rect.top) / rect.height) * canvas.height, 0, canvas.height);
     if (type === 'down') event.currentTarget.setPointerCapture(event.pointerId);
     if (type === 'down') unlockImpactAudio();
-    if (type === 'up' && event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
     window.dispatchEvent(new CustomEvent('pd:stage-pointer', {
       detail: { type, x, y }
     }));
@@ -298,6 +298,10 @@ export default function App() {
     gameRef.current = createPropertyDamageGame(mountRef.current, startMode);
     gameRef.current.scale.resize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     activeModeRef.current = startMode;
+  }, []);
+
+  const resetScene = useCallback((startMode: StartMode) => {
+    window.dispatchEvent(new Event(startMode === 'damageRush' ? 'pd:reset-rush' : 'pd:reset-level'));
   }, []);
 
   useEffect(() => {
@@ -328,6 +332,7 @@ export default function App() {
     gameRef.current?.scene.resume('DamageRushScene');
     const isSwitchingScene = activeModeRef.current !== startMode;
     if (isSwitchingScene) bootGame(startMode);
+    else resetScene(startMode);
     setMode(startMode);
     setCountdown(null);
     setIsPaused(false);
@@ -335,9 +340,10 @@ export default function App() {
     if (startMode !== 'damageRush' || !isSwitchingScene) {
       useGameStore.getState().addFeed(startMode === 'damageRush' ? 'Damage Rush staged. Pick a weapon before the props roll.' : 'Wreck Room staged. Pick the next bad idea.');
     }
-  }, [bootGame, resetRun, setActiveMode, setRoundState]);
+  }, [bootGame, resetRun, resetScene, setActiveMode, setRoundState]);
 
   const returnToMenu = useCallback(() => {
+    resetScene(activeModeRef.current);
     setActiveMode('wreckRoom');
     resetRun();
     gameRef.current?.scene.resume('PropertyDamageScene');
@@ -346,7 +352,7 @@ export default function App() {
     setIsPaused(false);
     setMode('menu');
     if (activeModeRef.current !== 'wreckRoom') bootGame('wreckRoom');
-  }, [bootGame, resetRun, setActiveMode]);
+  }, [bootGame, resetRun, resetScene, setActiveMode]);
 
   const beginNewRound = useCallback(() => {
     if (mode === 'damageRush') {
@@ -368,7 +374,7 @@ export default function App() {
   }, []);
 
   const openPauseMenu = useCallback(() => {
-    if (mode === 'menu' || roundState === 'summary') return;
+    if (mode === 'menu' || roundState === 'selecting' || roundState === 'countdown' || roundState === 'summary') return;
     setIsPaused(true);
     setScenePaused(true);
   }, [mode, roundState, setScenePaused]);

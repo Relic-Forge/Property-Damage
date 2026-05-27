@@ -7,6 +7,10 @@ export const GAME_WIDTH = 1280;
 export const GAME_HEIGHT = 720;
 
 export function createPropertyDamageGame(parent: HTMLElement, startMode: StartMode = 'wreckRoom') {
+  const scenes = startMode === 'damageRush'
+    ? [DamageRushScene, PropertyDamageScene]
+    : [PropertyDamageScene, DamageRushScene];
+
   return new Phaser.Game({
     type: Phaser.AUTO,
     parent,
@@ -25,13 +29,6 @@ export function createPropertyDamageGame(parent: HTMLElement, startMode: StartMo
       mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH
     },
-    scene: [],
-    callbacks: {
-      postBoot: (game) => {
-        game.scene.add('PropertyDamageScene', PropertyDamageScene, false);
-        game.scene.add('DamageRushScene', DamageRushScene, false);
-        game.scene.start(startMode === 'damageRush' ? 'DamageRushScene' : 'PropertyDamageScene');
-      }
-    }
+    scene: scenes
   });
 }

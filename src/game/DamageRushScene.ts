@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GearType, RoundSummary, useGameStore } from '../store/gameStore';
+import { assetPath } from './assetPath';
 
 type RushDebrisKind = 'glass' | 'wood' | 'metal' | 'soft' | 'electronics' | 'cake';
 type RushPropKind =
@@ -129,6 +130,7 @@ export class DamageRushScene extends Phaser.Scene {
   private roundOver = false;
   private fogBurstUsed = false;
   private isRoundArmed = false;
+  private delayedCalls: Phaser.Time.TimerEvent[] = [];
   private stagePointerHandler = (event: Event) => {
     const detail = (event as CustomEvent<{ type: 'down' | 'move' | 'up'; x: number; y: number }>).detail;
     if (!detail || this.roundOver || !this.cameras?.main) return;
@@ -172,11 +174,11 @@ export class DamageRushScene extends Phaser.Scene {
   }
 
   private loadImageOnce(key: string, path: string) {
-    if (!this.textures.exists(key)) this.load.image(key, path);
+    if (!this.textures.exists(key)) this.load.image(key, assetPath(path));
   }
 
   private loadSvgOnce(key: string, path: string, config: Phaser.Types.Loader.FileTypes.SVGSizeConfig) {
-    if (!this.textures.exists(key)) this.load.svg(key, path, config);
+    if (!this.textures.exists(key)) this.load.svg(key, assetPath(path), config);
   }
 
   create() {
@@ -192,6 +194,7 @@ export class DamageRushScene extends Phaser.Scene {
     window.addEventListener('pd:round-armed', this.roundArmedHandler);
     window.addEventListener('keydown', this.keyHandler);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.clearTimers();
       window.removeEventListener('pd:stage-pointer', this.stagePointerHandler);
       window.removeEventListener('pd:reset-rush', this.resetHandler);
       window.removeEventListener('pd:round-armed', this.roundArmedHandler);
@@ -237,6 +240,7 @@ export class DamageRushScene extends Phaser.Scene {
   }
 
   private resetRush() {
+    this.clearTimers();
     this.roundOver = false;
     this.isRoundArmed = false;
     this.isDragging = false;
@@ -279,7 +283,7 @@ export class DamageRushScene extends Phaser.Scene {
     this.nextSpawnAt = this.time.now + 760;
     useGameStore.getState().addFeed('Damage Rush started. Fragile stuff is incoming.');
     [SPAWN_X, SPAWN_X + 140, SPAWN_X + 280, SPAWN_X + 420].forEach((spawnX, index) => {
-      this.time.delayedCall(index * 210, () => {
+      this.trackDelayedCall(index * 210, () => {
         if (!this.roundOver && this.isRoundArmed) this.spawnIncomingProp(0, spawnX);
       });
     });
@@ -352,7 +356,7 @@ export class DamageRushScene extends Phaser.Scene {
     this.fogBurstUsed = false;
     useGameStore.getState().setRoundState('launched');
     useGameStore.getState().addFeed(`${config.label} away. Reloading before the next bad idea.`);
-    this.time.delayedCall(BASE_RELOAD_MS, () => {
+    this.trackDelayedCall(BASE_RELOAD_MS, () => {
       if (!this.roundOver) {
         useGameStore.getState().setRoundState('ready');
         this.setPerformerPose('idle');
@@ -408,7 +412,7 @@ export class DamageRushScene extends Phaser.Scene {
         meta.healthLeft -= impactValue;
         this.rushBestSingleImpact = Math.max(this.rushBestSingleImpact, Math.round(impactValue * 34));
         prop.setTint(0xffffff);
-        this.time.delayedCall(60, () => {
+        this.trackDelayedCall(60, () => {
           if (prop.active) prop.clearTint();
         });
         this.launchHitIds.add(meta.id);
@@ -458,6 +462,7 @@ export class DamageRushScene extends Phaser.Scene {
   }
 
   private endRound() {
+    this.clearTimers();
     this.roundOver = true;
     this.isDragging = false;
     this.aimLine.clear();
@@ -720,7 +725,7 @@ export class DamageRushScene extends Phaser.Scene {
       piece.setAngularVelocity(Phaser.Math.FloatBetween(-0.24, 0.24));
       piece.setMass(Phaser.Math.FloatBetween(2, 6));
       this.debris.push(piece);
-      this.time.delayedCall(5500, () => {
+      this.trackDelayedCall(5500, () => {
         piece.destroy();
         this.debris = this.debris.filter((item) => item !== piece);
       });
@@ -822,5 +827,19 @@ export class DamageRushScene extends Phaser.Scene {
     if (this.rushBestSingleImpact > 900) bonuses.push(`Best single impact: $${this.rushBestSingleImpact.toLocaleString()}.`);
     if (this.launchHitIds.size >= 3) bonuses.push('Multi-prop launch: legally confusing.');
     return bonuses.slice(0, 5);
+  }
+
+  private trackDelayedCall(delay: number, callback: () => void) {
+    const timer = this.time.delayedCall(delay, () => {
+      this.delayedCalls = this.delayedCalls.filter((item) => item !== timer);
+      if (this.scene.isActive()) callback();
+    });
+    this.delayedCalls.push(timer);
+    return timer;
+  }
+
+  private clearTimers() {
+    this.delayedCalls.forEach((timer) => timer.remove(false));
+    this.delayedCalls = [];
   }
 }
