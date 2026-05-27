@@ -43,6 +43,7 @@ type GearConfig = {
   height: number;
   visualWidth?: number;
   visualHeight?: number;
+  visualSize?: number;
   mass: number;
   bounciness: number;
   behavior: 'balanced' | 'crusher' | 'ricochet' | 'spear' | 'burst';
@@ -50,10 +51,10 @@ type GearConfig = {
 };
 
 const GEAR: Record<GearType, GearConfig> = {
-  guitar: { label: 'GUITAR', width: 120, height: 34, mass: 24, bounciness: 0.72, behavior: 'balanced', multiplier: 1.12 },
+  guitar: { label: 'GUITAR', width: 120, height: 34, visualSize: 176, mass: 24, bounciness: 0.72, behavior: 'balanced', multiplier: 1.12 },
   amp: { label: 'BASS AMP', width: 96, height: 88, mass: 68, bounciness: 0.24, behavior: 'crusher', multiplier: 1.5 },
   cymbal: { label: 'CYMBAL', width: 78, height: 78, mass: 18, bounciness: 0.98, behavior: 'ricochet', multiplier: 0.9 },
-  micStand: { label: 'MIC STAND', width: 150, height: 18, visualWidth: 170, visualHeight: 72, mass: 22, bounciness: 0.5, behavior: 'spear', multiplier: 1.35 },
+  micStand: { label: 'MIC STAND', width: 150, height: 18, visualWidth: 170, visualHeight: 72, visualSize: 188, mass: 22, bounciness: 0.5, behavior: 'spear', multiplier: 1.35 },
   fogMachine: { label: 'FOG MACHINE', width: 82, height: 54, mass: 34, bounciness: 0.38, behavior: 'burst', multiplier: 1.05 }
 };
 
@@ -68,7 +69,7 @@ const RUSH_PROPS: RushPropConfig[] = [
   { kind: 'expensiveVase', label: 'Paint Can', textureKey: 'prop-paint-can', assetPath: '/assets/garage-band/props-raster/paint_can_intact.png', width: 78, height: 84, mass: 14, health: 18, value: 1250, speed: 3.15, wobble: 0.065, bounciness: 0.62, fragility: 2.1, debrisKind: 'glass', bonusTag: 'tinyTarget' }
 ];
 
-const ROUND_DURATION_SECONDS = 90;
+const ROUND_DURATION_SECONDS = 30;
 const MAX_ACTIVE_RUSH_OBJECTS = 10;
 const BASE_RELOAD_MS = 1200;
 const COMBO_WINDOW_MS = 2500;
@@ -80,6 +81,12 @@ const LAUNCHER = new Phaser.Math.Vector2(118, 575);
 const MAX_PULL_DISTANCE = 340;
 const LAUNCH_VELOCITY_DIVISOR = 10.4;
 const PERFORMER_SCALE = 0.32;
+const PERFORMER_POSE_SCALE: Record<PerformerPose, number> = {
+  idle: PERFORMER_SCALE,
+  pull: PERFORMER_SCALE * 1.32,
+  throw: PERFORMER_SCALE * 1.33,
+  recover: PERFORMER_SCALE * 1.24
+};
 const AIM_THEME = {
   shadow: 0x19161f,
   warm: 0xffe17d,
@@ -91,7 +98,7 @@ type PerformerPose = 'idle' | 'pull' | 'throw' | 'recover';
 export class DamageRushScene extends Phaser.Scene {
   private aimLine!: Phaser.GameObjects.Graphics;
   private hudText!: Phaser.GameObjects.Text;
-  private reloadText!: Phaser.GameObjects.Text;
+  private reloadSpinner!: Phaser.GameObjects.Graphics;
   private timerText!: Phaser.GameObjects.Text;
   private scoreText!: Phaser.GameObjects.Text;
   private activeGear: Phaser.Physics.Matter.Sprite | null = null;
@@ -327,9 +334,10 @@ export class DamageRushScene extends Phaser.Scene {
     this.activeGear.setData('behavior', config.behavior);
     this.activeGear.setData('launchedAt', this.time.now);
     this.activeGear.setData('settledGear', false);
-    this.activeGear.setDisplaySize(config.visualWidth ?? config.width, config.visualHeight ?? config.height);
     if (config.behavior === 'ricochet') this.activeGear.setCircle(38);
+    if (config.behavior === 'balanced') this.activeGear.setRectangle(config.width, config.height);
     if (config.behavior === 'spear') this.activeGear.setRectangle(config.width, config.height);
+    this.activeGear.setScale(this.getThrownGearScale(config));
     this.activeGear.setFrictionAir(0.008);
     this.activeGear.setBounce(config.bounciness);
     this.activeGear.setMass(config.mass * (1 + useGameStore.getState().upgrades.gearWeight * 0.1));
@@ -351,6 +359,10 @@ export class DamageRushScene extends Phaser.Scene {
         this.updateReadyGearPreview();
       }
     });
+  }
+
+  private getThrownGearScale(config: GearConfig) {
+    return (config.visualSize ?? Math.max(config.visualWidth ?? config.width, config.visualHeight ?? config.height)) / 320;
   }
 
   private updateThrownGearPile(time: number) {
@@ -549,10 +561,10 @@ export class DamageRushScene extends Phaser.Scene {
   private setPerformerPose(pose: PerformerPose) {
     this.performerPose = pose;
     this.performer?.setPosition(86, 640).setTexture(`performer-${pose}`);
-    if (pose === 'idle') this.performer?.setAngle(0).setScale(PERFORMER_SCALE);
-    if (pose === 'pull') this.performer?.setAngle(-2).setScale(PERFORMER_SCALE * 1.02, PERFORMER_SCALE * 0.99);
-    if (pose === 'throw') this.performer?.setAngle(3).setScale(PERFORMER_SCALE * 1.04, PERFORMER_SCALE * 0.98);
-    if (pose === 'recover') this.performer?.setAngle(1).setScale(PERFORMER_SCALE);
+    if (pose === 'idle') this.performer?.setAngle(0).setScale(PERFORMER_POSE_SCALE.idle);
+    if (pose === 'pull') this.performer?.setAngle(-2).setScale(PERFORMER_POSE_SCALE.pull);
+    if (pose === 'throw') this.performer?.setAngle(3).setScale(PERFORMER_POSE_SCALE.throw);
+    if (pose === 'recover') this.performer?.setAngle(1).setScale(PERFORMER_POSE_SCALE.recover);
   }
 
   private getHeldGearPoint(pose = this.performerPose) {
@@ -601,7 +613,7 @@ export class DamageRushScene extends Phaser.Scene {
       .setScale((Math.max(config.width, config.height) / 320) * (1 + eased * 0.16));
     this.performer
       ?.setAngle(-2 - eased * 5)
-      .setScale(PERFORMER_SCALE * (1.02 + eased * 0.08), PERFORMER_SCALE * (0.99 - eased * 0.06));
+      .setScale(PERFORMER_POSE_SCALE.pull);
   }
 
   private animatePerformerThrow(pull: Phaser.Math.Vector2) {
@@ -716,30 +728,53 @@ export class DamageRushScene extends Phaser.Scene {
   }
 
   private createHud() {
-    this.hudText = this.add.text(240, 112, 'DAMAGE RUSH', {
+    this.hudText = this.add.text(560, 112, '', {
       color: '#fff7c2',
       fontFamily: 'Arial Black, Impact, sans-serif',
-      fontSize: '23px',
+      fontSize: '24px',
       stroke: '#19161f',
       strokeThickness: 5
-    }).setDepth(10);
-    this.timerText = this.add.text(690, 112, '', { color: '#ffe17d', fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '26px', stroke: '#19161f', strokeThickness: 5 }).setDepth(10);
-    this.scoreText = this.add.text(1015, 112, '', { color: '#ffffff', fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '25px', stroke: '#19161f', strokeThickness: 5 }).setDepth(10);
-    this.reloadText = this.add.text(390, 666, '', { color: '#ffe17d', fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '20px', stroke: '#19161f', strokeThickness: 5 }).setDepth(10);
+    }).setOrigin(0.5).setDepth(10);
+    this.timerText = this.add.text(735, 112, '', { color: '#ffe17d', fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '26px', stroke: '#19161f', strokeThickness: 5 }).setOrigin(0.5).setDepth(10);
+    this.scoreText = this.add.text(0, 0, '', { color: '#ffffff', fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '1px' }).setVisible(false);
+    this.reloadSpinner = this.add.graphics().setDepth(18);
   }
 
   private updateHud(remaining: number, time: number) {
-    this.hudText.setText(`DAMAGE RUSH   ESCAPES ${this.rushEscapedCount}`);
+    this.hudText.setText(`ESCAPES ${this.rushEscapedCount}`);
     this.timerText.setText(`TIME ${Math.ceil(remaining)}`);
-    this.scoreText.setText(`SCORE $${this.rushScore.toLocaleString()}`);
+    this.scoreText.setText('');
     const reloading = Math.max(0, this.reloadUntil - time);
-    this.reloadText.setText(reloading > 0 ? `RELOADING ${(reloading / 1000).toFixed(1)}s` : 'READY');
+    this.updateReloadSpinner(reloading, time);
+  }
+
+  private updateReloadSpinner(reloading: number, time: number) {
+    this.reloadSpinner.clear();
+    if (reloading <= 0 || this.roundOver || !this.isRoundArmed) return;
+
+    const x = 86;
+    const y = 658;
+    const radius = 17;
+    const progress = Phaser.Math.Clamp(1 - reloading / BASE_RELOAD_MS, 0, 1);
+    const start = time * 0.014;
+    const fullCircle = Math.PI * 2;
+    const end = start + fullCircle * Math.max(0.22, progress);
+
+    this.reloadSpinner.lineStyle(5, 0x19161f, 0.82);
+    this.reloadSpinner.strokeCircle(x, y, radius);
+    this.reloadSpinner.lineStyle(5, 0xffe17d, 1);
+    this.reloadSpinner.beginPath();
+    this.reloadSpinner.arc(x, y, radius, start, end, false);
+    this.reloadSpinner.strokePath();
+    this.reloadSpinner.lineStyle(2, 0x5de0e6, 0.92);
+    this.reloadSpinner.beginPath();
+    this.reloadSpinner.arc(x, y, radius - 8, -start * 1.2, -start * 1.2 + fullCircle * 0.38, false);
+    this.reloadSpinner.strokePath();
   }
 
   private drawBackground() {
     this.add.image(640, 360, 'garage-background').setDisplaySize(1280, 720).setAlpha(0.96).setDepth(-10);
     this.add.rectangle(640, 360, 1280, 720, 0x111018, 0.02).setDepth(-9);
-    this.add.text(930, 98, 'INCOMING PROPS', { color: '#fff7c2', fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '18px', stroke: '#19161f', strokeThickness: 5 }).setDepth(-7).setAlpha(0.9);
   }
 
   private createFloatingText(x: number, y: number, text: string) {

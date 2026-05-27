@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { getUpgradeCost, UpgradeKeyType, useGameStore } from '../store/gameStore';
 
-const upgrades: Array<{ key: UpgradeKeyType; label: string; note: string; symbol: string }> = [
-  { key: 'launchPower', label: 'Bigger Windup', note: 'more bad physics per launch', symbol: '!' },
-  { key: 'gearWeight', label: 'Heavier Gear', note: 'hits with extra regret', symbol: '#' },
-  { key: 'fragility', label: 'Cheap Drywall', note: 'room folds under pressure', symbol: '%' },
-  { key: 'viralChance', label: 'Neighbor Cam', note: 'better bonus evidence', symbol: '*' },
-  { key: 'insuranceMultiplier', label: 'Claim Math', note: 'damage pays suspiciously better', symbol: '$' }
+const upgrades: Array<{ key: UpgradeKeyType; label: string; effect: string; note: string; symbol: string }> = [
+  { key: 'launchPower', label: 'Bigger Windup', effect: 'Launch Violence', note: 'more bad physics per throw', symbol: '!' },
+  { key: 'gearWeight', label: 'Heavier Gear', effect: 'Impact Weight', note: 'hits with extra regret', symbol: '#' },
+  { key: 'fragility', label: 'Cheap Drywall', effect: 'Room Weakness', note: 'everything folds faster', symbol: '%' },
+  { key: 'viralChance', label: 'Neighbor Cam', effect: 'Bonus Evidence', note: 'better chaos receipts', symbol: '*' },
+  { key: 'insuranceMultiplier', label: 'Claim Math', effect: 'Payout Boost', note: 'damage pays suspiciously', symbol: '$' }
 ];
 
 export function UpgradePanel() {
@@ -58,16 +58,20 @@ export function UpgradePanel() {
               <button
                 key={upgrade.key}
                 type="button"
-                className="upgrade-row"
+              className={`upgrade-row ${canBuy ? '' : 'is-locked'}`}
                 disabled={!canBuy}
                 onClick={() => buyUpgrade(upgrade.key)}
               >
-                <span className="upgrade-mark">{upgrade.symbol}</span>
+                <span className="upgrade-card-top">
+                  <span className="upgrade-mark">{upgrade.symbol}</span>
+                  <span className="upgrade-level">L{level}</span>
+                </span>
                 <span className="upgrade-copy">
                   <strong>{upgrade.label}</strong>
-                  <small>{upgrade.note} · L{level}</small>
+                  <em>{upgrade.effect}</em>
+                  <small>{upgrade.note}</small>
                 </span>
-                <b>${cost}</b>
+                <b>${cost.toLocaleString()}</b>
               </button>
             );
           })}

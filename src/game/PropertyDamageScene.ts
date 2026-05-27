@@ -16,6 +16,7 @@ type GearConfig = {
   height: number;
   visualWidth?: number;
   visualHeight?: number;
+  visualSize?: number;
   mass: number;
   bounciness: number;
   color: string;
@@ -27,6 +28,7 @@ const GEAR: Record<GearType, GearConfig> = {
     label: 'GUITAR',
     width: 120,
     height: 34,
+    visualSize: 176,
     mass: 24,
     bounciness: 0.72,
     color: '#ffb84d',
@@ -56,6 +58,7 @@ const GEAR: Record<GearType, GearConfig> = {
     height: 18,
     visualWidth: 170,
     visualHeight: 72,
+    visualSize: 188,
     mass: 22,
     bounciness: 0.58,
     color: '#d8d8ea',
@@ -85,9 +88,18 @@ const AIM_THEME = {
 const GEAR_VARIANTS = [1, 2, 3] as const;
 const WORLD_WIDTH = 1700;
 const WORLD_HEIGHT = 960;
-const CAMERA_ZOOM = 0.78;
 const FLOOR_Y = 905;
+const BACKGROUND_ASPECT_RATIO = 1891 / 831;
+const BACKGROUND_HEIGHT = WORLD_HEIGHT;
+const BACKGROUND_WIDTH = BACKGROUND_HEIGHT * BACKGROUND_ASPECT_RATIO;
+const BACKGROUND_LEFT = (WORLD_WIDTH - BACKGROUND_WIDTH) / 2;
 type PerformerPose = 'idle' | 'pull' | 'throw' | 'recover';
+const PERFORMER_POSE_SCALE: Record<PerformerPose, number> = {
+  idle: PERFORMER_SCALE,
+  pull: PERFORMER_SCALE * 1.32,
+  throw: PERFORMER_SCALE * 1.33,
+  recover: PERFORMER_SCALE * 1.24
+};
 
 type LevelProp = {
   x: number;
@@ -100,22 +112,31 @@ type LevelProp = {
   value: number;
   health: number;
   kind: BreakableMeta['kind'];
+  mass: number;
+  bounce: number;
 };
 
-const LEVEL_PROPS: LevelProp[] = [
-  { x: 890, y: 806, width: 260, height: 100, key: 'prop-folding-table', path: '/assets/garage-band/props-raster/folding_table_intact.png', label: 'Folding Table', value: 260, health: 28, kind: 'wood' },
-  { x: 922, y: 735, width: 120, height: 118, key: 'prop-questionable-cake', path: '/assets/garage-band/props-raster/questionable_cake_intact.png', label: 'Questionable Cake', value: 420, health: 18, kind: 'soft' },
-  { x: 1120, y: 792, width: 150, height: 138, key: 'prop-old-tv', path: '/assets/garage-band/props-raster/old_tv_intact.png', label: 'Old TV', value: 780, health: 38, kind: 'electronics' },
-  { x: 1328, y: 720, width: 116, height: 225, key: 'prop-speaker-stack', path: '/assets/garage-band/props-raster/speaker_stack_intact.png', label: 'Speaker Stack', value: 680, health: 45, kind: 'metal' },
-  { x: 1548, y: 824, width: 150, height: 92, key: 'prop-cooler', path: '/assets/garage-band/props-raster/cooler_intact.png', label: 'Cooler of Regret', value: 320, health: 32, kind: 'metal' },
-  { x: 1430, y: 510, width: 330, height: 105, key: 'prop-garage-shelf', path: '/assets/garage-band/props-raster/garage_shelf_intact.png', label: 'Garage Shelf', value: 550, health: 36, kind: 'wood' },
-  { x: 1368, y: 430, width: 86, height: 92, key: 'prop-paint-can', path: '/assets/garage-band/props-raster/paint_can_intact.png', label: 'Paint Can', value: 190, health: 20, kind: 'metal' },
-  { x: 1450, y: 432, width: 130, height: 90, key: 'prop-cable-bin', path: '/assets/garage-band/props-raster/cable_bin_intact.png', label: 'Cable Bin', value: 210, health: 20, kind: 'soft' },
-  { x: 1540, y: 430, width: 104, height: 104, key: 'prop-mystery-box', path: '/assets/garage-band/props-raster/mystery_box_intact.png', label: 'Mystery Box', value: 240, health: 22, kind: 'wood' },
-  { x: 1050, y: 348, width: 265, height: 86, key: 'prop-neon-sign', path: '/assets/garage-band/props-raster/neon_sign_intact.png', label: 'Neon Sign', value: 900, health: 24, kind: 'glass' },
-  { x: 700, y: 782, width: 150, height: 150, key: 'prop-tiny-drum-kit', path: '/assets/garage-band/props-raster/tiny_drum_kit_intact.png', label: 'Tiny Drum Kit', value: 520, health: 30, kind: 'metal' },
-  { x: 1626, y: 648, width: 84, height: 245, key: 'prop-garage-window', path: '/assets/garage-band/props-raster/garage_window_intact.png', label: 'Garage Window', value: 760, health: 15, kind: 'glass' }
+type LevelPropTemplate = Omit<LevelProp, 'x' | 'y'>;
+
+const LEVEL_PROP_TEMPLATES: LevelPropTemplate[] = [
+  { width: 260, height: 100, key: 'prop-folding-table', path: '/assets/garage-band/props-raster/folding_table_intact.png', label: 'Folding Table', value: 260, health: 28, kind: 'wood', mass: 42, bounce: 0.38 },
+  { width: 120, height: 118, key: 'prop-questionable-cake', path: '/assets/garage-band/props-raster/questionable_cake_intact.png', label: 'Questionable Cake', value: 420, health: 18, kind: 'soft', mass: 20, bounce: 0.48 },
+  { width: 150, height: 138, key: 'prop-old-tv', path: '/assets/garage-band/props-raster/old_tv_intact.png', label: 'Old TV', value: 780, health: 38, kind: 'electronics', mass: 52, bounce: 0.24 },
+  { width: 170, height: 225, key: 'prop-speaker-stack', path: '/assets/garage-band/props-raster/speaker_stack_intact.png', label: 'Speaker Stack', value: 680, health: 45, kind: 'metal', mass: 66, bounce: 0.28 },
+  { width: 150, height: 92, key: 'prop-cooler', path: '/assets/garage-band/props-raster/cooler_intact.png', label: 'Cooler of Regret', value: 320, health: 32, kind: 'metal', mass: 46, bounce: 0.34 },
+  { width: 330, height: 105, key: 'prop-garage-shelf', path: '/assets/garage-band/props-raster/garage_shelf_intact.png', label: 'Garage Shelf', value: 550, health: 36, kind: 'wood', mass: 72, bounce: 0.2 },
+  { width: 86, height: 92, key: 'prop-paint-can', path: '/assets/garage-band/props-raster/paint_can_intact.png', label: 'Paint Can', value: 190, health: 20, kind: 'metal', mass: 16, bounce: 0.62 },
+  { width: 130, height: 90, key: 'prop-cable-bin', path: '/assets/garage-band/props-raster/cable_bin_intact.png', label: 'Cable Bin', value: 210, health: 20, kind: 'soft', mass: 24, bounce: 0.46 },
+  { width: 104, height: 104, key: 'prop-mystery-box', path: '/assets/garage-band/props-raster/mystery_box_intact.png', label: 'Mystery Box', value: 240, health: 22, kind: 'wood', mass: 30, bounce: 0.5 },
+  { width: 265, height: 86, key: 'prop-neon-sign', path: '/assets/garage-band/props-raster/neon_sign_intact.png', label: 'Neon Sign', value: 900, health: 24, kind: 'glass', mass: 18, bounce: 0.7 },
+  { width: 300, height: 220, key: 'prop-tiny-drum-kit', path: '/assets/garage-band/props-raster/tiny_drum_kit_intact_v2.png', label: 'Tiny Drum Kit', value: 520, health: 30, kind: 'metal', mass: 48, bounce: 0.42 },
+  { width: 84, height: 245, key: 'prop-garage-window', path: '/assets/garage-band/props-raster/garage_window_intact.png', label: 'Garage Window', value: 760, health: 15, kind: 'glass', mass: 22, bounce: 0.64 }
 ];
+
+const PROP_PLACEMENT_BOUNDS = new Phaser.Geom.Rectangle(500, 285, 1110, 555);
+const PLAYER_CLEAR_ZONE = new Phaser.Geom.Rectangle(0, 540, 455, 390);
+const PROP_EDGE_PADDING = 34;
+const PROP_CLEARANCE = 18;
 
 const DEBRIS_TEXTURES: Record<BreakableMeta['kind'], string[]> = {
   glass: ['debris-glass-1'],
@@ -154,6 +175,7 @@ export class PropertyDamageScene extends Phaser.Scene {
   private roundFinishing = false;
   private maxRoundTimer: number | null = null;
   private resetHandler = () => this.resetLevel();
+  private resizeHandler = (gameSize: Phaser.Structs.Size) => this.layoutCamera(gameSize.width, gameSize.height);
   private stagePointerHandler = (event: Event) => {
     const detail = (event as CustomEvent<{ type: 'down' | 'move' | 'up'; x: number; y: number }>).detail;
     if (!detail || !this.cameras?.main) return;
@@ -184,7 +206,7 @@ export class PropertyDamageScene extends Phaser.Scene {
     this.loadSvgOnce('effect-dust-puff', '/assets/garage-band/effects/dust_puff.svg', { width: 84, height: 84 });
     this.loadSvgOnce('effect-spark', '/assets/garage-band/effects/spark_01.svg', { width: 64, height: 64 });
     this.loadSvgOnce('effect-smoke-puff', '/assets/garage-band/effects/smoke_puff.svg', { width: 96, height: 96 });
-    LEVEL_PROPS.forEach((prop) => {
+    LEVEL_PROP_TEMPLATES.forEach((prop) => {
       this.loadImageOnce(prop.key, prop.path);
     });
 
@@ -207,10 +229,8 @@ export class PropertyDamageScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    this.cameras.main.setZoom(CAMERA_ZOOM);
-    this.cameras.main.centerOn(820, 500);
     this.drawGarageBackground();
+    this.layoutCamera(this.scale.width, this.scale.height);
     this.aimLine = this.add.graphics();
     this.createWorldBounds();
     this.createVenueObjects();
@@ -223,11 +243,25 @@ export class PropertyDamageScene extends Phaser.Scene {
     window.addEventListener('pd:reset-level', this.resetHandler);
     window.addEventListener('pd:stage-pointer', this.stagePointerHandler);
     window.addEventListener('keydown', this.keyHandler);
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.resizeHandler);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       window.removeEventListener('pd:reset-level', this.resetHandler);
       window.removeEventListener('pd:stage-pointer', this.stagePointerHandler);
       window.removeEventListener('keydown', this.keyHandler);
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.resizeHandler);
     });
+  }
+
+  private layoutCamera(width: number, height: number) {
+    const viewportWidth = Math.max(1, width);
+    const viewportHeight = Math.max(1, height);
+    const camera = this.cameras.main;
+    const zoom = viewportHeight / WORLD_HEIGHT;
+
+    camera.setViewport(0, 0, viewportWidth, viewportHeight);
+    camera.setBounds(BACKGROUND_LEFT, 0, BACKGROUND_WIDTH, WORLD_HEIGHT);
+    camera.setZoom(zoom);
+    camera.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
   }
 
   update(_time: number, delta: number) {
@@ -365,10 +399,10 @@ export class PropertyDamageScene extends Phaser.Scene {
     this.performerPose = pose;
     this.performer?.setPosition(this.launcher.x - 18, this.launcher.y + 74);
     this.performer?.setTexture(`performer-${pose}`);
-    if (pose === 'idle') this.performer?.setAngle(0).setScale(PERFORMER_SCALE);
-    if (pose === 'pull') this.performer?.setAngle(-2).setScale(PERFORMER_SCALE * 1.02, PERFORMER_SCALE * 0.99);
-    if (pose === 'throw') this.performer?.setAngle(3).setScale(PERFORMER_SCALE * 1.03, PERFORMER_SCALE * 0.98);
-    if (pose === 'recover') this.performer?.setAngle(1).setScale(PERFORMER_SCALE);
+    if (pose === 'idle') this.performer?.setAngle(0).setScale(PERFORMER_POSE_SCALE.idle);
+    if (pose === 'pull') this.performer?.setAngle(-2).setScale(PERFORMER_POSE_SCALE.pull);
+    if (pose === 'throw') this.performer?.setAngle(3).setScale(PERFORMER_POSE_SCALE.throw);
+    if (pose === 'recover') this.performer?.setAngle(1).setScale(PERFORMER_POSE_SCALE.recover);
   }
 
   private getHeldGearPoint(pose = this.performerPose) {
@@ -399,7 +433,7 @@ export class PropertyDamageScene extends Phaser.Scene {
       .setScale(this.getGearDisplayScale(useGameStore.getState().selectedGear, 0.92) * (1 + eased * 0.16));
     this.performer
       ?.setAngle(-2 - eased * 5)
-      .setScale(PERFORMER_SCALE * (1.02 + eased * 0.08), PERFORMER_SCALE * (0.99 - eased * 0.06));
+      .setScale(PERFORMER_POSE_SCALE.pull);
   }
 
   private animatePerformerThrow(point: Phaser.Math.Vector2, pull: Phaser.Math.Vector2) {
@@ -429,7 +463,7 @@ export class PropertyDamageScene extends Phaser.Scene {
         this.time.delayedCall(420, () => {
           if (useGameStore.getState().roundState === 'ready') this.setPerformerPose('idle');
           else {
-            this.performer?.setTexture('performer-recover');
+            this.setPerformerPose('recover');
             this.heldGearPreview?.setPosition(settlePoint.x, settlePoint.y);
           }
         });
@@ -471,6 +505,10 @@ export class PropertyDamageScene extends Phaser.Scene {
   private getGearDisplayScale(gearType: GearType, targetPixels: number) {
     const config = GEAR[gearType];
     return targetPixels * (Math.max(config.width, config.height) / 320);
+  }
+
+  private getThrownGearScale(config: GearConfig) {
+    return (config.visualSize ?? Math.max(config.visualWidth ?? config.width, config.visualHeight ?? config.height)) / 320;
   }
 
   private advanceGearVariant(gearType: GearType) {
@@ -519,9 +557,10 @@ export class PropertyDamageScene extends Phaser.Scene {
     this.activeGear.setName(`gear-${gearType}`);
     this.activeGear.setData('gearType', gearType);
     this.activeGear.setData('behavior', config.behavior);
-    this.activeGear.setDisplaySize(config.visualWidth ?? config.width, config.visualHeight ?? config.height);
     if (config.behavior === 'ricochet') this.activeGear.setCircle(39);
+    if (config.behavior === 'balanced') this.activeGear.setRectangle(config.width, config.height);
     if (config.behavior === 'spear') this.activeGear.setRectangle(config.width, config.height);
+    this.activeGear.setScale(this.getThrownGearScale(config));
     this.activeGear.setFrictionAir(0.01);
     this.activeGear.setBounce(config.bounciness);
     this.activeGear.setMass(config.mass * (1 + weightBonus));
@@ -701,17 +740,25 @@ export class PropertyDamageScene extends Phaser.Scene {
   }
 
   private createVenueObjects() {
-    LEVEL_PROPS.forEach((prop) => this.addBreakable(prop));
+    this.createRandomizedLevelProps().forEach((prop) => this.addBreakable(prop));
   }
 
   private addBreakable(prop: LevelProp) {
     const image = this.matter.add.image(prop.x, prop.y, prop.key, undefined, {
-      isStatic: true,
-      restitution: 0.42,
-      friction: 0.62,
-      density: 0.0015
+      isStatic: false,
+      ignoreGravity: true,
+      restitution: prop.bounce,
+      friction: 0.05,
+      frictionStatic: 0.02,
+      frictionAir: 0.018,
+      density: 0.0012,
+      chamfer: { radius: 8 }
     });
     image.setDisplaySize(prop.width, prop.height);
+    image.setBody({ type: 'rectangle', width: prop.width * 0.86, height: prop.height * 0.82 });
+    image.setIgnoreGravity(true);
+    image.setBounce(prop.bounce);
+    image.setMass(prop.mass);
     image.setData('breakable', {
       id: prop.key,
       label: prop.label,
@@ -720,9 +767,96 @@ export class PropertyDamageScene extends Phaser.Scene {
       broken: false,
       kind: prop.kind
     } satisfies BreakableMeta);
-    image.setFrictionAir(0.012);
+    image.setFrictionAir(0.018);
+    image.setAngularVelocity(Phaser.Math.FloatBetween(-0.003, 0.003));
     this.breakables.push(image);
     return image;
+  }
+
+  private createRandomizedLevelProps() {
+    const placed: LevelProp[] = [];
+    const occupied: Phaser.Geom.Rectangle[] = [];
+    const anchor = new Phaser.Math.Vector2(
+      Phaser.Math.Between(930, 1235),
+      Phaser.Math.Between(520, 690)
+    );
+    const orderedProps = Phaser.Utils.Array.Shuffle([...LEVEL_PROP_TEMPLATES]);
+
+    orderedProps.forEach((template, index) => {
+      const position = this.findPropPosition(template, occupied, anchor, index);
+      const rect = this.getPropRect(position.x, position.y, template.width, template.height, PROP_CLEARANCE);
+      occupied.push(rect);
+      placed.push({ ...template, x: position.x, y: position.y });
+    });
+
+    return placed;
+  }
+
+  private findPropPosition(
+    prop: LevelPropTemplate,
+    occupied: Phaser.Geom.Rectangle[],
+    anchor: Phaser.Math.Vector2,
+    index: number
+  ) {
+    const angleBase = index * 2.399963229728653;
+    const radiusBase = 80 + index * 34;
+
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      const ring = Math.floor(attempt / 24);
+      const angle = angleBase + Phaser.Math.FloatBetween(-0.95, 0.95) + ring * 0.42;
+      const radius = radiusBase + ring * 44 + Phaser.Math.Between(-55, 95);
+      const x = this.clampPropX(anchor.x + Math.cos(angle) * radius * 1.28, prop.width);
+      const y = this.clampPropY(anchor.y + Math.sin(angle) * radius * 0.78, prop.height);
+      if (this.canPlaceProp(x, y, prop.width, prop.height, occupied)) return new Phaser.Math.Vector2(x, y);
+    }
+
+    return this.findFallbackPropPosition(prop, occupied);
+  }
+
+  private findFallbackPropPosition(prop: LevelPropTemplate, occupied: Phaser.Geom.Rectangle[]) {
+    const minX = PROP_PLACEMENT_BOUNDS.left + prop.width / 2 + PROP_EDGE_PADDING;
+    const maxX = PROP_PLACEMENT_BOUNDS.right - prop.width / 2 - PROP_EDGE_PADDING;
+    const minY = PROP_PLACEMENT_BOUNDS.top + prop.height / 2 + PROP_EDGE_PADDING;
+    const maxY = Math.min(PROP_PLACEMENT_BOUNDS.bottom, FLOOR_Y - PROP_EDGE_PADDING) - prop.height / 2;
+
+    for (let y = maxY; y >= minY; y -= 34) {
+      for (let x = minX; x <= maxX; x += 38) {
+        if (this.canPlaceProp(x, y, prop.width, prop.height, occupied)) return new Phaser.Math.Vector2(x, y);
+      }
+    }
+
+    return new Phaser.Math.Vector2(this.clampPropX(PROP_PLACEMENT_BOUNDS.right - prop.width / 2, prop.width), this.clampPropY(maxY, prop.height));
+  }
+
+  private canPlaceProp(x: number, y: number, width: number, height: number, occupied: Phaser.Geom.Rectangle[]) {
+    const rect = this.getPropRect(x, y, width, height, PROP_CLEARANCE);
+    if (Phaser.Geom.Intersects.RectangleToRectangle(rect, PLAYER_CLEAR_ZONE)) return false;
+    return occupied.every((other) => !Phaser.Geom.Intersects.RectangleToRectangle(rect, other));
+  }
+
+  private getPropRect(x: number, y: number, width: number, height: number, padding = 0) {
+    return new Phaser.Geom.Rectangle(
+      x - width / 2 - padding,
+      y - height / 2 - padding,
+      width + padding * 2,
+      height + padding * 2
+    );
+  }
+
+  private clampPropX(x: number, width: number) {
+    return Phaser.Math.Clamp(
+      x,
+      PROP_PLACEMENT_BOUNDS.left + width / 2 + PROP_EDGE_PADDING,
+      PROP_PLACEMENT_BOUNDS.right - width / 2 - PROP_EDGE_PADDING
+    );
+  }
+
+  private clampPropY(y: number, height: number) {
+    return Phaser.Math.Clamp(
+      y,
+      PROP_PLACEMENT_BOUNDS.top + height / 2 + PROP_EDGE_PADDING,
+      Math.min(PROP_PLACEMENT_BOUNDS.bottom, FLOOR_Y - PROP_EDGE_PADDING) - height / 2
+    );
   }
 
   private spawnDebris(x: number, y: number, kind: BreakableMeta['kind'], count: number) {
@@ -819,7 +953,7 @@ export class PropertyDamageScene extends Phaser.Scene {
 
   private drawGarageBackground() {
     this.add.image(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, 'garage-background')
-      .setDisplaySize(WORLD_WIDTH, WORLD_HEIGHT)
+      .setDisplaySize(BACKGROUND_WIDTH, BACKGROUND_HEIGHT)
       .setDepth(-10);
   }
 }

@@ -3,12 +3,15 @@ import { PropertyDamageScene } from './PropertyDamageScene';
 import { DamageRushScene } from './DamageRushScene';
 import { StartMode } from './modes';
 
+export const GAME_WIDTH = 1280;
+export const GAME_HEIGHT = 720;
+
 export function createPropertyDamageGame(parent: HTMLElement, startMode: StartMode = 'wreckRoom') {
   return new Phaser.Game({
     type: Phaser.AUTO,
     parent,
-    width: 1280,
-    height: 720,
+    width: GAME_WIDTH,
+    height: GAME_HEIGHT,
     backgroundColor: '#19161f',
     physics: {
       default: 'matter',
@@ -19,7 +22,7 @@ export function createPropertyDamageGame(parent: HTMLElement, startMode: StartMo
       }
     },
     scale: {
-      mode: Phaser.Scale.FIT,
+      mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH
     },
     scene: [],
