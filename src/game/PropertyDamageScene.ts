@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { useGameStore, GearType, RoundSummary } from '../store/gameStore';
+import { assetPath } from './assetPath';
 
 type BreakableMeta = {
   id: string;
@@ -173,7 +174,8 @@ export class PropertyDamageScene extends Phaser.Scene {
   private lastBreakAt = 0;
   private launchedAt = 0;
   private roundFinishing = false;
-  private maxRoundTimer: number | null = null;
+  private maxRoundTimer: Phaser.Time.TimerEvent | null = null;
+  private finishRoundTimer: Phaser.Time.TimerEvent | null = null;
   private resetHandler = () => this.resetLevel();
   private resizeHandler = (gameSize: Phaser.Structs.Size) => this.layoutCamera(gameSize.width, gameSize.height);
   private stagePointerHandler = (event: Event) => {
@@ -221,11 +223,11 @@ export class PropertyDamageScene extends Phaser.Scene {
   }
 
   private loadImageOnce(key: string, path: string) {
-    if (!this.textures.exists(key)) this.load.image(key, path);
+    if (!this.textures.exists(key)) this.load.image(key, assetPath(path));
   }
 
   private loadSvgOnce(key: string, path: string, config: Phaser.Types.Loader.FileTypes.SVGSizeConfig) {
-    if (!this.textures.exists(key)) this.load.svg(key, path, config);
+    if (!this.textures.exists(key)) this.load.svg(key, assetPath(path), config);
   }
 
   create() {
@@ -234,8 +236,6 @@ export class PropertyDamageScene extends Phaser.Scene {
     this.aimLine = this.add.graphics();
     this.createWorldBounds();
     this.createVenueObjects();
-    this.setupInput();
-    this.setupKeyboardShortcuts();
     this.setupCollisions();
     this.createPerformer();
     this.updateReadyGearPreview();
@@ -249,6 +249,7 @@ export class PropertyDamageScene extends Phaser.Scene {
       window.removeEventListener('pd:stage-pointer', this.stagePointerHandler);
       window.removeEventListener('keydown', this.keyHandler);
       this.scale.off(Phaser.Scale.Events.RESIZE, this.resizeHandler);
+      this.clearTimers();
     });
   }
 
@@ -282,31 +283,8 @@ export class PropertyDamageScene extends Phaser.Scene {
     if (!this.roundFinishing && (this.settledTimer > 1400 || timedOut)) {
       this.roundFinishing = true;
       useGameStore.getState().setRoundState('settling');
-      window.setTimeout(() => this.finishRound(), 650);
+      this.scheduleFinishRound();
     }
-  }
-
-  private setupInput() {
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      const point = this.getPointerPoint(pointer);
-      if (point) this.beginDrag(point);
-    });
-
-    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      const point = this.getPointerPoint(pointer);
-      if (point) this.moveDrag(point);
-    });
-
-    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-      const point = this.getPointerPoint(pointer);
-      if (point) this.endDrag(point);
-    });
-  }
-
-  private getPointerPoint(pointer: Phaser.Input.Pointer) {
-    if (!this.cameras?.main) return null;
-    const point = pointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
-    return this.clampPointerPoint(point);
   }
 
   private clampPointerPoint(point: Phaser.Math.Vector2) {
@@ -515,11 +493,6 @@ export class PropertyDamageScene extends Phaser.Scene {
     this.gearVariantByType[gearType] = (this.gearVariantByType[gearType] % GEAR_VARIANTS.length) + 1;
   }
 
-  private setupKeyboardShortcuts() {
-    this.input.keyboard?.on('keydown-SPACE', () => this.quickLaunch());
-    this.input.keyboard?.on('keydown-ENTER', () => this.quickLaunch());
-  }
-
   private quickLaunch() {
     const state = useGameStore.getState().roundState;
     if (state === 'summary') {
@@ -575,7 +548,7 @@ export class PropertyDamageScene extends Phaser.Scene {
     store.addFeed(`${config.label} launched. Bad idea confirmed.`);
     this.advanceGearVariant(gearType);
     this.previewTextureKey = null;
-    this.maxRoundTimer = window.setTimeout(() => this.forceFinishRound(), 12500);
+    this.maxRoundTimer = this.time.delayedCall(12500, () => this.forceFinishRound());
   }
 
   private setupCollisions() {
@@ -648,10 +621,8 @@ export class PropertyDamageScene extends Phaser.Scene {
   }
 
   private finishRound() {
-    if (this.maxRoundTimer !== null) {
-      window.clearTimeout(this.maxRoundTimer);
-      this.maxRoundTimer = null;
-    }
+    this.clearTimers();
+    if (!this.scene.isActive()) return;
     const store = useGameStore.getState();
     const viralRoll = Math.random() < 0.18 + store.upgrades.viralChance * 0.04;
     const insuranceMultiplier = 1 + store.upgrades.insuranceMultiplier * 0.08;
@@ -677,7 +648,19 @@ export class PropertyDamageScene extends Phaser.Scene {
     if (useGameStore.getState().roundState !== 'launched' || this.roundFinishing) return;
     this.roundFinishing = true;
     useGameStore.getState().setRoundState('settling');
-    window.setTimeout(() => this.finishRound(), 650);
+    this.scheduleFinishRound();
+  }
+
+  private scheduleFinishRound() {
+    this.finishRoundTimer?.remove(false);
+    this.finishRoundTimer = this.time.delayedCall(650, () => this.finishRound());
+  }
+
+  private clearTimers() {
+    this.maxRoundTimer?.remove(false);
+    this.finishRoundTimer?.remove(false);
+    this.maxRoundTimer = null;
+    this.finishRoundTimer = null;
   }
 
   private buildBonuses(totalDamage: number, viralRoll: boolean) {
@@ -709,10 +692,7 @@ export class PropertyDamageScene extends Phaser.Scene {
   }
 
   private resetLevel(setReady = true) {
-    if (this.maxRoundTimer !== null) {
-      window.clearTimeout(this.maxRoundTimer);
-      this.maxRoundTimer = null;
-    }
+    this.clearTimers();
     this.aimLine?.clear();
     this.setPerformerPose('idle');
     this.activeGear?.destroy();

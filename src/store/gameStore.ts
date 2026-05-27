@@ -147,6 +147,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }),
   buyUpgrade: (key) => {
     const state = get();
+    if (['countdown', 'launched', 'settling'].includes(state.roundState)) return;
     const currentLevel = state.upgrades[key];
     const cost = getUpgradeCost(key, currentLevel);
     if (state.cash < cost) return;

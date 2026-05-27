@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { assetPath } from '../game/assetPath';
 import { GearType, useGameStore } from '../store/gameStore';
 
 export type GearMenuItem = {
@@ -15,35 +16,35 @@ export const gear: GearMenuItem[] = [
     label: 'Guitar',
     effect: 'Riff Ricochet',
     note: 'spinny trouble with a questionable solo',
-    image: '/assets/garage-band/guitar-v1.png'
+    image: assetPath('/assets/garage-band/guitar-v1.png')
   },
   {
     key: 'amp',
     label: 'Bass Amp',
     effect: 'Feedback Slam',
     note: 'heavy crusher, emotionally louder',
-    image: '/assets/garage-band/amp-v1.png'
+    image: assetPath('/assets/garage-band/amp-v1.png')
   },
   {
     key: 'cymbal',
     label: 'Cymbal',
     effect: 'Hi-Hat Pinball',
     note: 'bounces like it heard bad news',
-    image: '/assets/garage-band/cymbal-v1.png'
+    image: assetPath('/assets/garage-band/cymbal-v1.png')
   },
   {
     key: 'micStand',
     label: 'Mic Stand',
     effect: 'Crowd-Control Spear',
     note: 'long, pointy, stage-manager approved',
-    image: '/assets/garage-band/micStand-v1.png'
+    image: assetPath('/assets/garage-band/micStand-v1.png')
   },
   {
     key: 'fogMachine',
     label: 'Fog Machine',
     effect: 'Smoke Break',
     note: 'turns visibility into a legal question',
-    image: '/assets/garage-band/fogMachine-v1.png'
+    image: assetPath('/assets/garage-band/fogMachine-v1.png')
   }
 ];
 

@@ -36,6 +36,7 @@ const menuOptions: Array<{
 export function MainMenu({ onSelectWreckRoom, onSelectDamageRush }: MainMenuProps) {
   const [selected, setSelected] = useState<MenuChoice | null>(null);
   const subtitleRefs = useRef<Array<HTMLSpanElement | null>>([]);
+  const selectTimeoutRef = useRef<number | null>(null);
   const subtitleLetters = useMemo<FallingSubtitleLetter[]>(
     () => Array.from('Break it. Score it.').map((character, index) => {
       const centerBias = (index - 8.5) / 8.5;
@@ -63,8 +64,17 @@ export function MainMenu({ onSelectWreckRoom, onSelectDamageRush }: MainMenuProp
     if (selected) return;
     setSelected(choice);
     playMenuSelect();
-    window.setTimeout(() => callbacks[choice](), 520);
+    selectTimeoutRef.current = window.setTimeout(() => {
+      selectTimeoutRef.current = null;
+      callbacks[choice]();
+    }, 520);
   };
+
+  useEffect(() => {
+    return () => {
+      if (selectTimeoutRef.current !== null) window.clearTimeout(selectTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (selected) return undefined;
