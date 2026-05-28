@@ -4,6 +4,11 @@ export type GearType = 'guitar' | 'amp' | 'cymbal' | 'micStand' | 'fogMachine';
 export type RoundState = 'selecting' | 'countdown' | 'ready' | 'launched' | 'settling' | 'summary';
 export type ScoreMode = 'wreckRoom' | 'damageRush';
 
+export type AudioSettings = {
+  musicVolume: number;
+  sfxVolume: number;
+};
+
 export type RoundSummary = {
   mode?: ScoreMode;
   totalDamage: number;
@@ -24,6 +29,11 @@ type UpgradeKey = 'launchPower' | 'gearWeight' | 'fragility' | 'viralChance' | '
 
 type Upgrades = Record<UpgradeKey, number>;
 type ModeStats = Record<ScoreMode, { cash: number; bestDamage: number }>;
+const AUDIO_SETTINGS_STORAGE_KEY = 'property-damage-audio-settings';
+const defaultAudioSettings: AudioSettings = {
+  musicVolume: 0.42,
+  sfxVolume: 0.86
+};
 
 const initialModeStats: ModeStats = {
   wreckRoom: { cash: 0, bestDamage: 0 },
@@ -38,6 +48,8 @@ type GameStore = {
   liveDamage: number;
   liveChaos: number;
   liveCombo: number;
+  liveEscapes: number;
+  liveTimeRemaining: number | null;
   cash: number;
   fans: number;
   chaos: number;
@@ -46,14 +58,17 @@ type GameStore = {
   lastSummary: RoundSummary | null;
   feed: string[];
   upgrades: Upgrades;
+  audioSettings: AudioSettings;
   selectGear: (gear: GearType) => void;
   setActiveMode: (mode: ScoreMode) => void;
   setRoundState: (state: RoundState) => void;
   startRound: () => void;
   updateLiveRound: (damage: number, chaos: number, combo: number) => void;
+  updateRushHud: (timeRemaining: number, escapes: number) => void;
   addFeed: (message: string) => void;
   completeRound: (summary: RoundSummary) => void;
   buyUpgrade: (key: UpgradeKey) => void;
+  setAudioSettings: (settings: Partial<AudioSettings>) => void;
   resetRun: () => void;
 };
 
@@ -67,6 +82,25 @@ const upgradeCosts: Record<UpgradeKey, (level: number) => number> = {
 
 export const getUpgradeCost = (key: UpgradeKey, level: number) => upgradeCosts[key](level);
 
+function loadAudioSettings(): AudioSettings {
+  if (typeof window === 'undefined') return defaultAudioSettings;
+  try {
+    const stored = window.localStorage.getItem(AUDIO_SETTINGS_STORAGE_KEY);
+    if (!stored) return defaultAudioSettings;
+    const parsed = JSON.parse(stored) as Partial<AudioSettings>;
+    return {
+      musicVolume: clampVolume(parsed.musicVolume, defaultAudioSettings.musicVolume),
+      sfxVolume: clampVolume(parsed.sfxVolume, defaultAudioSettings.sfxVolume)
+    };
+  } catch {
+    return defaultAudioSettings;
+  }
+}
+
+function clampVolume(value: unknown, fallback: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : fallback;
+}
+
 export const useGameStore = create<GameStore>((set, get) => ({
   activeMode: 'wreckRoom',
   modeStats: initialModeStats,
@@ -75,6 +109,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   liveDamage: 0,
   liveChaos: 0,
   liveCombo: 0,
+  liveEscapes: 0,
+  liveTimeRemaining: null,
   cash: 0,
   fans: 0,
   chaos: 0,
@@ -85,6 +121,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     'The garage looks too intact.',
     'The neighbors have been warned.'
   ],
+  audioSettings: loadAudioSettings(),
   upgrades: {
     launchPower: 0,
     gearWeight: 0,
@@ -106,10 +143,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       liveDamage: 0,
       liveChaos: 0,
       liveCombo: 0,
+      liveEscapes: 0,
+      liveTimeRemaining: null,
       lastSummary: null
     }),
   updateLiveRound: (liveDamage, liveChaos, liveCombo) =>
     set({ liveDamage, liveChaos, liveCombo }),
+  updateRushHud: (liveTimeRemaining, liveEscapes) =>
+    set({ liveTimeRemaining, liveEscapes }),
   addFeed: (message) =>
     set((state) => ({ feed: [message, ...state.feed].slice(0, 8) })),
   completeRound: (summary) =>
@@ -131,6 +172,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         liveDamage: 0,
         liveChaos: 0,
         liveCombo: 0,
+        liveEscapes: 0,
+        liveTimeRemaining: null,
         cash: activeStats.cash,
         fans: state.fans + summary.fans,
         chaos: state.chaos + summary.chaos,
@@ -166,12 +209,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
       feed: [`Upgrade bought: ${key}.`, ...state.feed].slice(0, 8)
     });
   },
+  setAudioSettings: (settings) =>
+    set((state) => {
+      const audioSettings = {
+        musicVolume: clampVolume(settings.musicVolume, state.audioSettings.musicVolume),
+        sfxVolume: clampVolume(settings.sfxVolume, state.audioSettings.sfxVolume)
+      };
+      try {
+        window.localStorage.setItem(AUDIO_SETTINGS_STORAGE_KEY, JSON.stringify(audioSettings));
+      } catch {
+        // Local persistence is best-effort; live settings still apply.
+      }
+      return { audioSettings };
+    }),
   resetRun: () =>
     set({
       roundState: 'selecting',
       liveDamage: 0,
       liveChaos: 0,
       liveCombo: 0,
+      liveEscapes: 0,
+      liveTimeRemaining: null,
       combo: 0,
       lastSummary: null
     })

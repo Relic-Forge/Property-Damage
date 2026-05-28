@@ -113,8 +113,8 @@ src/ui/MainMenu.tsx                 Title menu and mode selection
 src/ui/GearSelector.tsx             Object picker
 src/ui/UpgradePanel.tsx             Upgrade shop
 src/ui/ScorePanel.tsx               HUD stats
-public/assets/garage-band/          Generated SVG game assets
-docs/                               Design notes, art direction, backlog, prompts
+public/assets/garage-band/          Generated game assets
+docs/                               Design notes, art direction, backlog, implementation notes
 ```
 
 ## Useful Docs
@@ -124,6 +124,7 @@ docs/                               Design notes, art direction, backlog, prompt
 - [Asset manifest](docs/ASSET_MANIFEST.md)
 - [V1 done definition](docs/V1_DONE_DEFINITION.md)
 - [Suggested GitHub issues](docs/GITHUB_ISSUES.md)
+- [Build notes](docs/BUILD_NOTES.md)
 
 ## License
 

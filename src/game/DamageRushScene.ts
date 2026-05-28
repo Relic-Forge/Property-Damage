@@ -80,6 +80,7 @@ const MAX_ACTIVE_RUSH_OBJECTS = 10;
 const BASE_RELOAD_MS = 1200;
 const COMBO_WINDOW_MS = 2500;
 const MAX_COMBO_MULTIPLIER = 5;
+const FLOATING_TEXT_DURATION_MS = 1350;
 const WORLD_WIDTH = 1280;
 const WORLD_HEIGHT = 720;
 const BACKGROUND_ASPECT_RATIO = 1891 / 831;
@@ -150,6 +151,8 @@ export class DamageRushScene extends Phaser.Scene {
   private rushFansEarned = 0;
   private rushCashEarned = 0;
   private lastClearAt = 0;
+  private lastSyncedHudSecond = -1;
+  private lastSyncedHudEscapes = -1;
   private launchHitIds = new Set<string>();
   private roundOver = false;
   private fogBurstUsed = false;
@@ -316,6 +319,8 @@ export class DamageRushScene extends Phaser.Scene {
     this.rushFansEarned = 0;
     this.rushCashEarned = 0;
     this.lastClearAt = 0;
+    this.lastSyncedHudSecond = -1;
+    this.lastSyncedHudEscapes = -1;
     this.launchHitIds.clear();
     this.fogBurstUsed = false;
     this.dragAnchor = null;
@@ -896,7 +901,9 @@ export class DamageRushScene extends Phaser.Scene {
 
   private setPerformerPose(pose: PerformerPose) {
     this.performerPose = pose;
-    this.performer?.setPosition(86, 640).setTexture(`performer-${pose}`);
+    const textureKey = `performer-${pose}`;
+    if (!this.performer || !this.textures.exists(textureKey)) return;
+    this.performer.setPosition(86, 640).setTexture(textureKey);
     if (pose === 'idle') this.performer?.setAngle(0).setScale(PERFORMER_POSE_SCALE.idle);
     if (pose === 'pull') this.performer?.setAngle(-2).setScale(PERFORMER_POSE_SCALE.pull);
     if (pose === 'throw') this.performer?.setAngle(3).setScale(PERFORMER_POSE_SCALE.throw);
@@ -1044,18 +1051,27 @@ export class DamageRushScene extends Phaser.Scene {
       fontSize: '24px',
       stroke: '#19161f',
       strokeThickness: 5
-    }).setOrigin(0.5).setDepth(10);
-    this.timerText = this.add.text(735, 112, '', { color: '#ffe17d', fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '26px', stroke: '#19161f', strokeThickness: 5 }).setOrigin(0.5).setDepth(10);
+    }).setOrigin(0.5).setDepth(10).setVisible(false);
+    this.timerText = this.add.text(735, 112, '', { color: '#ffe17d', fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '26px', stroke: '#19161f', strokeThickness: 5 }).setOrigin(0.5).setDepth(10).setVisible(false);
     this.scoreText = this.add.text(0, 0, '', { color: '#ffffff', fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '1px' }).setVisible(false);
     this.reloadSpinner = this.add.graphics().setDepth(18);
   }
 
   private updateHud(remaining: number, time: number) {
-    this.hudText.setText(`ESCAPES ${this.rushEscapedCount}`);
+    this.hudText.setText(`SPARED ${this.rushEscapedCount}`);
     this.timerText.setText(`TIME ${Math.ceil(remaining)}`);
+    this.syncRushHud(remaining);
     this.scoreText.setText('');
     const reloading = Math.max(0, this.reloadUntil - time);
     this.updateReloadSpinner(reloading, time);
+  }
+
+  private syncRushHud(remaining: number) {
+    const displaySecond = Math.max(0, Math.ceil(remaining));
+    if (displaySecond === this.lastSyncedHudSecond && this.rushEscapedCount === this.lastSyncedHudEscapes) return;
+    this.lastSyncedHudSecond = displaySecond;
+    this.lastSyncedHudEscapes = this.rushEscapedCount;
+    useGameStore.getState().updateRushHud(displaySecond, this.rushEscapedCount);
   }
 
   private updateReloadSpinner(reloading: number, time: number) {
@@ -1092,17 +1108,50 @@ export class DamageRushScene extends Phaser.Scene {
       color: '#fff7c2',
       fontFamily: 'Arial Black, Impact, sans-serif',
       fontSize: '22px',
+      align: 'center',
       stroke: '#19161f',
       strokeThickness: 6
     }).setOrigin(0.5).setDepth(30);
-    this.tweens.add({ targets: label, y: y - 48, alpha: 0, scale: 1.16, duration: 900, ease: 'Cubic.easeOut', onComplete: () => label.destroy() });
+    this.tweens.add({ targets: label, y: y - 48, alpha: 0, scale: 1.16, duration: FLOATING_TEXT_DURATION_MS, ease: 'Cubic.easeOut', onComplete: () => label.destroy() });
   }
 
   private getImpactLabel(score: number, meta: RushPropMeta, gearType: GearType) {
-    if (this.rushCombo >= 4) return `SECURITY DEPOSIT GONE x${this.rushCombo}`;
-    if (meta.bonusTag === 'tinyTarget') return `TINY TARGET +$${score.toLocaleString()}`;
-    if (gearType === 'cymbal') return `RICOCHET CLAIM +$${score.toLocaleString()}`;
-    return `THAT LOOKED EXPENSIVE +$${score.toLocaleString()}`;
+    const amount = `+$${score.toLocaleString()}`;
+    if (this.rushCombo >= 4) {
+      return `${Phaser.Utils.Array.GetRandom([
+        'DEPOSIT EVAPORATED',
+        'COMBO PAPERWORK',
+        'CLAIM WENT PRO',
+        'LANDLORD BUFFERING',
+        'DEBRIS HAT TRICK'
+      ])} x${this.rushCombo}\n${amount}`;
+    }
+    if (meta.bonusTag === 'tinyTarget') {
+      return `${Phaser.Utils.Array.GetRandom([
+        'TINY TARGET, HUGE BILL',
+        'SMALL CAN, BIG REGRET',
+        'PRECISION NONSENSE',
+        'PAINT DID TAXES'
+      ])}\n${amount}`;
+    }
+    if (gearType === 'cymbal') {
+      return `${Phaser.Utils.Array.GetRandom([
+        'RICOCHET CLAIM',
+        'CYMBAL LAWYERED UP',
+        'PING OF CONSEQUENCE',
+        'BONK WITH INTEREST'
+      ])}\n${amount}`;
+    }
+    return `${Phaser.Utils.Array.GetRandom([
+      'THAT LOOKED EXPENSIVE',
+      'BAD IDEA PAID',
+      'ROOM LOST ARGUMENT',
+      'INSURANCE FLINCHED',
+      'VERY NORMAL CLAIM',
+      'DEPOSIT WHEEZED',
+      'DEBRIS RECEIPT',
+      'PROPERTY SAID OOF'
+    ])}\n${amount}`;
   }
 
   private getClearFeed(label: string) {
@@ -1111,7 +1160,14 @@ export class DamageRushScene extends Phaser.Scene {
       `${label}: Security Deposit Gone.`,
       `${label}: The Adjuster Is Sweating.`,
       `${label}: Combo paperwork has been filed.`,
-      `${label}: No Refunds, Only Debris.`
+      `${label}: No Refunds, Only Debris.`,
+      `${label}: Landlord typing in all caps.`,
+      `${label}: Warranty left the room.`,
+      `${label}: Deductible just got taller.`,
+      `${label}: Professionally ruined.`,
+      `${label}: The garage regrets hosting.`,
+      `${label}: Claim snacks are ready.`,
+      `${label}: Mostly confetti now.`
     ]);
   }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Phaser from 'phaser';
+import { gameAudio } from './game/audio/gameAudio';
 import { createPropertyDamageGame } from './game/createGame';
 import { GameMode, StartMode } from './game/modes';
 import { useGameStore } from './store/gameStore';
@@ -142,15 +143,16 @@ function unlockImpactAudio() {
   }
 }
 
-async function playDamageReportImpact() {
+async function playDamageReportImpact(sfxVolume: number) {
   try {
+    if (sfxVolume <= 0.001) return;
     const audio = getImpactAudioContext();
     if (!audio) return;
     if (audio.state === 'suspended') await audio.resume();
     const start = audio.currentTime;
     const master = audio.createGain();
     master.gain.setValueAtTime(0.0001, start);
-    master.gain.exponentialRampToValueAtTime(0.72, start + 0.04);
+    master.gain.exponentialRampToValueAtTime(0.72 * sfxVolume, start + 0.04);
     master.gain.exponentialRampToValueAtTime(0.0001, start + 1.45);
     master.connect(audio.destination);
 
@@ -263,8 +265,12 @@ export default function App() {
   const setActiveMode = useGameStore((state) => state.setActiveMode);
   const setRoundState = useGameStore((state) => state.setRoundState);
   const addFeed = useGameStore((state) => state.addFeed);
+  const audioSettings = useGameStore((state) => state.audioSettings);
+  const setAudioSettings = useGameStore((state) => state.setAudioSettings);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isPaused, setIsPaused] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const settingsPausedSceneRef = useRef(false);
   const lastReportSoundRef = useRef<string | null>(null);
   const titleState = mode !== 'menu' && (roundState === 'ready' || roundState === 'launched' || roundState === 'settling') ? 'is-fading' : '';
   const crackPaths = useMemo(() => {
@@ -326,6 +332,8 @@ export default function App() {
   }, []);
 
   const selectMode = useCallback((startMode: StartMode) => {
+    gameAudio.unlock();
+    gameAudio.startMusic();
     setActiveMode(startMode);
     resetRun();
     gameRef.current?.scene.resume('PropertyDamageScene');
@@ -350,6 +358,7 @@ export default function App() {
     gameRef.current?.scene.resume('DamageRushScene');
     setCountdown(null);
     setIsPaused(false);
+    setIsSettingsOpen(false);
     setMode('menu');
     if (activeModeRef.current !== 'wreckRoom') bootGame('wreckRoom');
   }, [bootGame, resetRun, resetScene, setActiveMode]);
@@ -384,7 +393,32 @@ export default function App() {
     setScenePaused(false);
   }, [setScenePaused]);
 
+  const openSettings = useCallback(() => {
+    gameAudio.unlock();
+    gameAudio.playUiClick();
+    gameAudio.startMusic();
+    const shouldPauseScene = mode !== 'menu' && !isPaused && !['selecting', 'countdown', 'summary'].includes(roundState);
+    settingsPausedSceneRef.current = shouldPauseScene;
+    if (shouldPauseScene) {
+      setIsPaused(true);
+      setScenePaused(true);
+    }
+    setIsSettingsOpen(true);
+  }, [isPaused, mode, roundState, setScenePaused]);
+
+  const closeSettings = useCallback(() => {
+    setIsSettingsOpen(false);
+    if (settingsPausedSceneRef.current) {
+      settingsPausedSceneRef.current = false;
+      setIsPaused(false);
+      setScenePaused(false);
+    }
+  }, [setScenePaused]);
+
   const handleGearPick = useCallback((gearKey: typeof weaponHotkeys[number]) => {
+    gameAudio.unlock();
+    gameAudio.startMusic();
+    gameAudio.playWeaponSelect(gearKey);
     selectGear(gearKey);
     setRoundState('countdown');
     setCountdown(3);
@@ -405,7 +439,11 @@ export default function App() {
   }, [addFeed, countdown, setRoundState]);
 
   useEffect(() => {
-    const unlock = () => unlockImpactAudio();
+    const unlock = () => {
+      unlockImpactAudio();
+      gameAudio.unlock();
+      gameAudio.startMusic();
+    };
     window.addEventListener('pointerdown', unlock, { once: true });
     window.addEventListener('keydown', unlock, { once: true });
     return () => {
@@ -415,18 +453,34 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    gameAudio.setVolumes(audioSettings);
+  }, [audioSettings]);
+
+  useEffect(() => {
     const handleHotkey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
 
+      if (isSettingsOpen) {
+        if (event.code === 'Escape' || event.code === 'KeyS') {
+          event.preventDefault();
+          closeSettings();
+        }
+        return;
+      }
+
       if (mode === 'menu') {
         if (event.code === 'Digit1') {
           event.preventDefault();
+          gameAudio.unlock();
+          gameAudio.playMenuSelect();
           selectMode('wreckRoom');
         }
         if (event.code === 'Digit2') {
           event.preventDefault();
+          gameAudio.unlock();
+          gameAudio.playMenuSelect();
           selectMode('damageRush');
         }
         return;
@@ -456,6 +510,10 @@ export default function App() {
         event.preventDefault();
         window.dispatchEvent(new Event('pd:toggle-upgrades'));
       }
+      if (event.code === 'KeyS') {
+        event.preventDefault();
+        openSettings();
+      }
       if (event.code === 'KeyM' || event.code === 'Escape') {
         event.preventDefault();
         if (isPaused) resumeRound();
@@ -465,15 +523,15 @@ export default function App() {
 
     window.addEventListener('keydown', handleHotkey);
     return () => window.removeEventListener('keydown', handleHotkey);
-  }, [handleGearPick, isPaused, mode, openPauseMenu, resumeRound, selectGear, selectMode]);
+  }, [closeSettings, handleGearPick, isPaused, isSettingsOpen, mode, openPauseMenu, openSettings, resumeRound, selectGear, selectMode]);
 
   useEffect(() => {
     if (mode === 'menu' || roundState !== 'summary' || !summary) return;
     const reportKey = `${summary.mode ?? mode}:${summary.totalDamage}:${summary.combo}:${summary.fans}`;
     if (lastReportSoundRef.current === reportKey) return;
     lastReportSoundRef.current = reportKey;
-    void playDamageReportImpact();
-  }, [mode, roundState, summary]);
+    void playDamageReportImpact(audioSettings.sfxVolume);
+  }, [audioSettings.sfxVolume, mode, roundState, summary]);
 
   return (
     <main className={`app-shell ${mode === 'menu' ? 'is-menu-active' : ''}`}>
@@ -498,18 +556,39 @@ export default function App() {
           <GearSelector />
           <UpgradePanel />
           {mode !== 'menu' && (
-            <button type="button" className="menu-trigger pause-trigger" onClick={openPauseMenu}>
-              <span className="trigger-mark trigger-mark-pause" aria-hidden="true">
-                <svg viewBox="0 0 32 32" focusable="false">
-                  <path d="M12 9v14" />
-                  <path d="M20 9v14" />
-                </svg>
-              </span>
-              <span className="trigger-copy">
-                <span>Pause</span>
-                <kbd>M</kbd>
-              </span>
-            </button>
+            <>
+              <button type="button" className="menu-trigger settings-trigger" onClick={openSettings} aria-label="Open settings">
+                <span className="trigger-mark trigger-mark-settings" aria-hidden="true">
+                  <svg viewBox="0 0 32 32" focusable="false">
+                    <path d="M16 5v4" />
+                    <path d="M16 23v4" />
+                    <path d="M5 16h4" />
+                    <path d="M23 16h4" />
+                    <path d="M8.2 8.2l2.8 2.8" />
+                    <path d="M21 21l2.8 2.8" />
+                    <path d="M23.8 8.2 21 11" />
+                    <path d="M11 21l-2.8 2.8" />
+                    <path d="M16 12a4 4 0 1 1 0 8 4 4 0 0 1 0-8" />
+                  </svg>
+                </span>
+                <span className="trigger-copy">
+                  <span>Settings</span>
+                  <kbd>S</kbd>
+                </span>
+              </button>
+              <button type="button" className="menu-trigger pause-trigger" onClick={openPauseMenu}>
+                <span className="trigger-mark trigger-mark-pause" aria-hidden="true">
+                  <svg viewBox="0 0 32 32" focusable="false">
+                    <path d="M12 9v14" />
+                    <path d="M20 9v14" />
+                  </svg>
+                </span>
+                <span className="trigger-copy">
+                  <span>Pause</span>
+                  <kbd>M</kbd>
+                </span>
+              </button>
+            </>
           )}
         </div>
         {mode !== 'menu' && (roundState === 'selecting' || roundState === 'countdown') && (
@@ -524,6 +603,7 @@ export default function App() {
                       key={item.key}
                       type="button"
                       className={`start-weapon-card ${selectedGear === item.key ? 'is-selected' : ''}`}
+                      onPointerEnter={() => gameAudio.playUiHover()}
                       onClick={() => handleGearPick(item.key)}
                     >
                       <span className="start-weapon-number">{index + 1}</span>
@@ -550,7 +630,50 @@ export default function App() {
               <h2>Just Breathe</h2>
               <div className="pause-actions">
                 <button type="button" onClick={resumeRound}>Resume</button>
+                <button type="button" onClick={openSettings}>Settings</button>
                 <button type="button" className="rage-button" onClick={returnToMenu}>Rage Quit</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {isSettingsOpen && (
+          <div className="settings-overlay" role="dialog" aria-label="Settings">
+            <div className="settings-card">
+              <p className="eyebrow">Settings</p>
+              <h2>Audio Mix</h2>
+              <div className="settings-sliders">
+                <label className="volume-control">
+                  <span>
+                    <strong>Music</strong>
+                    <em>{Math.round(audioSettings.musicVolume * 100)}%</em>
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(audioSettings.musicVolume * 100)}
+                    onChange={(event) => {
+                      gameAudio.startMusic();
+                      setAudioSettings({ musicVolume: Number(event.currentTarget.value) / 100 });
+                    }}
+                  />
+                </label>
+                <label className="volume-control">
+                  <span>
+                    <strong>Sound FX</strong>
+                    <em>{Math.round(audioSettings.sfxVolume * 100)}%</em>
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(audioSettings.sfxVolume * 100)}
+                    onChange={(event) => setAudioSettings({ sfxVolume: Number(event.currentTarget.value) / 100 })}
+                  />
+                </label>
+              </div>
+              <div className="settings-actions">
+                <button type="button" onClick={closeSettings}>Done</button>
               </div>
             </div>
           </div>

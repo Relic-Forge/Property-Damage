@@ -84,6 +84,7 @@ const GEAR: Record<GearType, GearConfig> = {
 const MAX_PULL_DISTANCE = 380;
 const PULL_POWER_EXPONENT = 2.2;
 const AIM_RELEASE_FADE_MS = 920;
+const FLOATING_TEXT_DURATION_MS = 1350;
 const AIM_MAX_BURST_MS = 180;
 const LAUNCH_VELOCITY_DIVISOR = 11.5;
 const PERFORMER_SCALE = 0.42;
@@ -628,8 +629,10 @@ export class PropertyDamageScene extends Phaser.Scene {
 
   private setPerformerPose(pose: PerformerPose) {
     this.performerPose = pose;
-    this.performer?.setPosition(this.launcher.x - 18, this.launcher.y + 74);
-    this.performer?.setTexture(`performer-${pose}`);
+    const textureKey = `performer-${pose}`;
+    if (!this.performer || !this.textures.exists(textureKey)) return;
+    this.performer.setPosition(this.launcher.x - 18, this.launcher.y + 74);
+    this.performer.setTexture(textureKey);
     if (pose === 'idle') this.performer?.setAngle(0).setScale(PERFORMER_POSE_SCALE.idle);
     if (pose === 'pull') this.performer?.setAngle(-2).setScale(PERFORMER_POSE_SCALE.pull);
     if (pose === 'throw') this.performer?.setAngle(3).setScale(PERFORMER_POSE_SCALE.throw);
@@ -888,7 +891,7 @@ export class PropertyDamageScene extends Phaser.Scene {
     this.roundChaos += Math.ceil(impact / 4) + this.roundCombo;
     useGameStore.getState().updateLiveRound(this.roundDamage, this.roundChaos, this.roundCombo);
 
-    this.createFloatingText(breakX, breakY - 20, `$${damage.toLocaleString()}`);
+    this.createFloatingText(breakX, breakY - 20, this.getDamagePopLabel(damage));
     this.cameras.main.shake(Math.min(260, 90 + impact * 8), Math.min(0.018, 0.004 + impact / 900));
 
     const flavor = this.getBreakFlavor(meta.label);
@@ -966,9 +969,31 @@ export class PropertyDamageScene extends Phaser.Scene {
       `${label} made a financially meaningful sound.`,
       `${label} is now a conversation with insurance.`,
       `${label} achieved its final form: pieces.`,
-      `${label} broke with confidence.`
+      `${label} broke with confidence.`,
+      `${label} chose itemized regret.`,
+      `${label} became a landlord email.`,
+      `${label} filed itself under debris.`,
+      `${label} discovered gravity's legal team.`,
+      `${label} is mostly vibes now.`,
+      `${label} heard the deductible laughing.`,
+      `${label} really committed to the bit.`
     ];
     return Phaser.Utils.Array.GetRandom(lines);
+  }
+
+  private getDamagePopLabel(damage: number) {
+    const label = Phaser.Utils.Array.GetRandom([
+      'BAD IDEA PAID',
+      'CLAIM DENIED',
+      'DEPOSIT WHEEZED',
+      'LANDLORD FELT THAT',
+      'VERY NORMAL SOUND',
+      'ITEMIZED REGRET',
+      'ROOM LOST ARGUMENT',
+      'INSURANCE FLINCHED',
+      'DEBRIS RECEIPT'
+    ]);
+    return `${label}\n+$${damage.toLocaleString()}`;
   }
 
   private resetLevel(setReady = true) {
@@ -1182,6 +1207,7 @@ export class PropertyDamageScene extends Phaser.Scene {
       color: '#fff7c2',
       fontFamily: 'Arial Black, Impact, sans-serif',
       fontSize: '24px',
+      align: 'center',
       stroke: '#19161f',
       strokeThickness: 6
     }).setOrigin(0.5);
@@ -1190,7 +1216,7 @@ export class PropertyDamageScene extends Phaser.Scene {
       y: y - 48,
       alpha: 0,
       scale: 1.18,
-      duration: 900,
+      duration: FLOATING_TEXT_DURATION_MS,
       ease: 'Cubic.easeOut',
       onComplete: () => label.destroy()
     });

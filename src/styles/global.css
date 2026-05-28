@@ -432,10 +432,12 @@ h1 {
 
 .weapon-trigger,
 .upgrade-trigger,
+.settings-trigger,
 .pause-trigger {
   width: 152px;
 }
 
+.settings-trigger,
 .pause-trigger {
   max-width: 152px;
   pointer-events: auto;
@@ -605,6 +607,12 @@ h1 {
   white-space: nowrap;
 }
 
+.score-panel {
+  position: relative;
+  min-width: 0;
+  pointer-events: auto;
+}
+
 .score-strip {
   position: relative;
   width: min(360px, 100%);
@@ -616,10 +624,18 @@ h1 {
   pointer-events: auto;
 }
 
+.score-strip.is-damage-rush {
+  width: min(430px, 100%);
+  grid-template-columns: minmax(112px, 1.2fr) repeat(3, minmax(66px, 0.86fr));
+  overflow: visible;
+}
+
 .stat {
+  position: relative;
   border-radius: 8px;
   padding: 7px 9px;
   background: rgba(255, 255, 255, 0.08);
+  overflow: visible;
 }
 
 .stat span,
@@ -639,6 +655,65 @@ h1 {
   font-size: 14px;
   letter-spacing: 0;
   white-space: nowrap;
+}
+
+.stat.is-rush-time {
+  position: fixed;
+  top: 11px;
+  left: 50%;
+  z-index: 42;
+  min-width: 116px;
+  padding: 4px 15px 8px;
+  text-align: center;
+  background:
+    linear-gradient(180deg, rgba(25, 22, 31, 0.7), rgba(25, 22, 31, 0.24)),
+    rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 225, 125, 0.22);
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.22),
+    0 14px 34px rgba(25, 22, 31, 0.24);
+  transform: translateX(-50%);
+  animation: rush-time-bob 1.9s ease-in-out infinite;
+}
+
+.stat.is-rush-time span {
+  color: rgba(248, 241, 220, 0.42);
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.stat.is-rush-time strong {
+  display: inline-block;
+  color: #fff7c2;
+  font-size: 32px;
+  line-height: 0.95;
+  text-shadow:
+    0 3px 0 rgba(255, 92, 138, 0.78),
+    0 6px 0 #19161f,
+    0 0 18px rgba(255, 225, 125, 0.38);
+  transform-origin: 50% 82%;
+  animation: rush-time-tick 520ms cubic-bezier(0.16, 1.22, 0.26, 1) both;
+}
+
+.stat.is-danger-time {
+  background:
+    linear-gradient(135deg, rgba(255, 92, 138, 0.32), rgba(255, 225, 125, 0.14)),
+    rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.24), 0 0 22px rgba(255, 92, 138, 0.2);
+}
+
+.stat.is-danger-time strong {
+  display: inline-block;
+  color: #fff7c2;
+  text-shadow:
+    0 3px 0 #ff5c8a,
+    0 6px 0 #19161f,
+    0 0 18px rgba(255, 225, 125, 0.5);
+  transform-origin: 50% 80%;
+  animation:
+    rush-time-tick 520ms cubic-bezier(0.16, 1.22, 0.26, 1) both,
+    timer-last-five 760ms cubic-bezier(0.2, 0.9, 0.2, 1) 520ms infinite alternate;
 }
 
 .latest-score {
@@ -679,7 +754,8 @@ h1 {
 }
 
 .round-start-overlay,
-.pause-overlay {
+.pause-overlay,
+.settings-overlay {
   position: absolute;
   inset: 0;
   z-index: 24;
@@ -711,6 +787,7 @@ h1 {
 
 .weapon-select-panel,
 .pause-card,
+.settings-card,
 .countdown-card {
   position: relative;
   width: min(820px, 100%);
@@ -728,6 +805,7 @@ h1 {
 
 .weapon-select-panel::before,
 .pause-card::before,
+.settings-card::before,
 .countdown-card::before {
   content: "";
   position: absolute;
@@ -739,7 +817,8 @@ h1 {
 }
 
 .weapon-select-panel h2,
-.pause-card h2 {
+.pause-card h2,
+.settings-card h2 {
   margin: 0 0 16px;
   color: #fff7c2;
   font-family: Impact, "Arial Black", sans-serif;
@@ -832,6 +911,7 @@ h1 {
   width: min(460px, 100%);
   padding-block: 28px 30px;
   text-align: center;
+  overflow: visible;
 }
 
 .countdown-card span,
@@ -856,7 +936,8 @@ h1 {
     0 6px 0 #ff5c8a,
     0 13px 0 #19161f,
     0 0 34px rgba(255, 225, 125, 0.62);
-  animation: countdown-hit 1s cubic-bezier(0.2, 0.9, 0.2, 1) infinite;
+  transform-origin: 50% 82%;
+  animation: countdown-hit 1s cubic-bezier(0.16, 1, 0.22, 1) infinite;
 }
 
 .pause-card {
@@ -867,9 +948,84 @@ h1 {
   will-change: transform, filter, box-shadow;
 }
 
+.settings-overlay {
+  z-index: 34;
+}
+
+.settings-card {
+  width: min(520px, 100%);
+}
+
+.settings-card h2 {
+  margin-bottom: 20px;
+}
+
+.settings-sliders {
+  display: grid;
+  gap: 14px;
+}
+
+.volume-control {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.volume-control span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.volume-control strong,
+.volume-control em {
+  display: block;
+  color: #f8f1dc;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 1000;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.volume-control em {
+  color: #ffe17d;
+}
+
+.volume-control input {
+  width: 100%;
+  accent-color: #ffe17d;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.settings-actions button {
+  min-width: 130px;
+  min-height: 50px;
+  border: 0;
+  border-radius: 8px;
+  color: #19161f;
+  background: #ffe17d;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 1000;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 -6px 0 rgba(0, 0, 0, 0.22),
+    0 14px 28px rgba(0, 0, 0, 0.28);
+}
+
 .pause-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -1355,6 +1511,11 @@ h1 {
     padding: 6px;
   }
 
+  .score-strip.is-damage-rush {
+    width: min(420px, 100%);
+    grid-template-columns: minmax(88px, 1.15fr) repeat(3, minmax(46px, 0.9fr));
+  }
+
   .stat {
     padding: 5px 7px;
   }
@@ -1367,12 +1528,23 @@ h1 {
     font-size: 12px;
   }
 
+  .stat.is-rush-time {
+    top: 8px;
+    min-width: 96px;
+    padding: 3px 12px 7px;
+  }
+
+  .stat.is-rush-time strong {
+    font-size: 28px;
+  }
+
   .menu-trigger {
     min-height: 46px;
   }
 
   .weapon-trigger,
   .upgrade-trigger,
+  .settings-trigger,
   .pause-trigger {
     width: 132px;
   }
@@ -1405,12 +1577,14 @@ h1 {
   }
 
   .round-start-overlay,
-  .pause-overlay {
+  .pause-overlay,
+  .settings-overlay {
     padding: 8px;
   }
 
   .weapon-select-panel,
   .pause-card,
+  .settings-card,
   .countdown-card {
     max-height: calc(100dvh - 16px);
     overflow: auto;
@@ -1419,13 +1593,15 @@ h1 {
 
   .weapon-select-panel::before,
   .pause-card::before,
+  .settings-card::before,
   .countdown-card::before {
     inset: -5px 16px auto;
     height: 12px;
   }
 
   .weapon-select-panel h2,
-  .pause-card h2 {
+  .pause-card h2,
+  .settings-card h2 {
     margin-bottom: 8px;
     font-size: clamp(32px, 8vh, 46px);
   }
@@ -1455,6 +1631,7 @@ h1 {
 
   .weapon-trigger,
   .upgrade-trigger,
+  .settings-trigger,
   .pause-trigger {
     width: 118px;
   }
@@ -1470,6 +1647,10 @@ h1 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .score-strip.is-damage-rush {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .weapon-list,
   .start-weapon-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1482,6 +1663,7 @@ h1 {
 
   .weapon-trigger,
   .upgrade-trigger,
+  .settings-trigger,
   .pause-trigger {
     width: min(100%, 320px);
     max-width: none;
@@ -1511,7 +1693,7 @@ h1 {
     left: 6px;
     right: auto;
     z-index: 30;
-    width: min(calc(100% - 12px), calc(177.777dvh - 88px));
+    width: calc(100% - 12px);
     display: flex;
     justify-content: flex-end;
   }
@@ -1521,6 +1703,11 @@ h1 {
     grid-template-columns: minmax(88px, 1.2fr) repeat(2, minmax(50px, 0.9fr));
     gap: 4px;
     padding: 5px;
+  }
+
+  .score-strip.is-damage-rush {
+    width: min(360px, 100%);
+    grid-template-columns: minmax(72px, 1.15fr) repeat(3, minmax(40px, 0.85fr));
   }
 
   .stat {
@@ -1537,6 +1724,21 @@ h1 {
     font-size: 10px;
     line-height: 1.05;
     letter-spacing: 0;
+  }
+
+  .stat.is-rush-time {
+    top: 5px;
+    min-width: 82px;
+    padding: 2px 10px 5px;
+  }
+
+  .stat.is-rush-time span {
+    font-size: 7px;
+  }
+
+  .stat.is-rush-time strong {
+    font-size: 22px;
+    line-height: 0.95;
   }
 
   .latest-score {
@@ -1562,6 +1764,7 @@ h1 {
 
   .weapon-trigger,
   .upgrade-trigger,
+  .settings-trigger,
   .pause-trigger {
     width: 96px;
     max-width: 96px;
@@ -1597,12 +1800,14 @@ h1 {
 
   .round-start-overlay,
   .pause-overlay,
+  .settings-overlay,
   .damage-report-overlay {
     padding: 8px;
   }
 
   .weapon-select-panel,
   .pause-card,
+  .settings-card,
   .countdown-card,
   .damage-report {
     max-height: calc(100dvh - 16px);
@@ -1615,7 +1820,8 @@ h1 {
   }
 
   .weapon-select-panel h2,
-  .pause-card h2 {
+  .pause-card h2,
+  .settings-card h2 {
     font-size: clamp(30px, 8vh, 42px);
   }
 
@@ -1893,16 +2099,64 @@ h1 {
   }
 }
 
-@keyframes countdown-hit {
-  0% {
-    transform: scale(0.78) rotate(-2deg);
-    filter: brightness(1.45);
+@keyframes rush-time-bob {
+  0%, 100% {
+    transform: translateX(-50%) translateY(0) rotate(0);
   }
-  28% {
-    transform: scale(1.08) rotate(1deg);
+  42% {
+    transform: translateX(-50%) translateY(3px) rotate(-0.7deg);
+  }
+  70% {
+    transform: translateX(-50%) translateY(-1px) rotate(0.5deg);
+  }
+}
+
+@keyframes rush-time-tick {
+  0% {
+    transform: translateY(-5px) scale(1.18) rotate(-2deg);
+    filter: brightness(1.18);
+  }
+  48% {
+    transform: translateY(1px) scale(0.96) rotate(1.5deg);
   }
   100% {
-    transform: scale(1) rotate(0);
+    transform: translateY(0) scale(1) rotate(0);
     filter: brightness(1);
+  }
+}
+
+@keyframes countdown-hit {
+  0% {
+    transform: translateY(-26px) scale(1.34) rotate(-4deg);
+    filter: brightness(1.65) saturate(1.18);
+  }
+  18% {
+    transform: translateY(7px) scale(0.94) rotate(2deg);
+    filter: brightness(1.28) saturate(1.08);
+  }
+  34% {
+    transform: translateY(-3px) scale(1.06) rotate(-1deg);
+  }
+  100% {
+    transform: translateY(0) scale(1) rotate(0);
+    filter: brightness(1);
+  }
+}
+
+@keyframes timer-last-five {
+  0% {
+    transform: translateY(-5px) scale(1.18) rotate(-3deg);
+    opacity: 1;
+  }
+  30% {
+    transform: translateY(0) scale(1) rotate(2deg);
+  }
+  72% {
+    transform: translateY(0) scale(1) rotate(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(54px) scale(0.86) rotate(10deg);
+    opacity: 0.16;
   }
 }

@@ -120,7 +120,7 @@ src/game/audio/
   sfxProfiles.ts
 ```
 
-Keep the files small enough that future Codex passes can work on one concern at a time.
+Keep files small enough that future implementation passes can work on one concern at a time.
 
 ---
 
@@ -792,7 +792,7 @@ Manual browser validation:
 
 ---
 
-## Codex build instruction
+## Build instruction
 
 Implement this as a focused pass. Do not make unrelated UI, scoring, or gameplay changes.
 

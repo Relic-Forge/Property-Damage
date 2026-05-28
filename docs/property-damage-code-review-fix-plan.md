@@ -1,6 +1,6 @@
 # Property Damage Code Review Fix Plan
 
-This document captures the current code review findings for Property Damage and turns them into a practical implementation checklist. The goal is not to redesign the game. The goal is to stabilize the current prototype so it runs predictably in local dev, Codex, and browser-hosted environments.
+This document captures the current code review findings for Property Damage and turns them into a practical implementation checklist. The goal is not to redesign the game. The goal is to stabilize the current prototype so it runs predictably in local development and browser-hosted environments.
 
 ## Scope
 
@@ -29,11 +29,7 @@ Work in this order:
 
 ### Issue
 
-`package-lock.json` was generated in an environment that wrote package `resolved` URLs pointing at an internal package mirror:
-
-```txt
-packages.applied-caas-gateway1.internal.api.openai.org
-```
+`package-lock.json` was generated in an environment that wrote package `resolved` URLs pointing at a non-public package mirror.
 
 ### Current effect
 
@@ -71,7 +67,7 @@ npm install
 Search `package-lock.json` and confirm there are no internal mirror URLs:
 
 ```bash
-grep -R "applied-caas-gateway\|internal.api.openai" package-lock.json
+grep -R "internal" package-lock.json
 ```
 
 Expected result: no matches.
@@ -524,7 +520,7 @@ The project has `typecheck`, but no lint script.
 
 ### Current effect
 
-Codex can introduce unused variables, inconsistent imports, unreachable code, or React hook mistakes without a fast lint gate.
+Large implementation passes can introduce unused variables, inconsistent imports, unreachable code, or React hook mistakes without a fast lint gate.
 
 ### Fix
 

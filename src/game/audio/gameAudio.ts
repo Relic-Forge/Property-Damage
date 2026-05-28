@@ -11,10 +11,15 @@ type WebAudioWindow = Window & typeof globalThis & {
 
 let audioContext: AudioContext | null = null;
 let masterBus: GainNode | null = null;
+let musicBus: GainNode | null = null;
 let ambienceBus: GainNode | null = null;
 let compressor: DynamicsCompressorNode | null = null;
 let shortVerb: ConvolverNode | null = null;
 let activeBreakSounds = 0;
+let sfxVolume = 0.86;
+let musicVolume = 0.42;
+let musicTimer: number | null = null;
+let musicStep = 0;
 const lastBreakSoundByProfile = new Map<string, number>();
 
 function getAudioContext() {
@@ -33,7 +38,7 @@ function resumeContext() {
 }
 
 function ensureOutputChain(audio: AudioContext) {
-  if (masterBus && ambienceBus && compressor && shortVerb) return;
+  if (masterBus && musicBus && ambienceBus && compressor && shortVerb) return;
   compressor = audio.createDynamicsCompressor();
   compressor.threshold.setValueAtTime(-18, audio.currentTime);
   compressor.knee.setValueAtTime(20, audio.currentTime);
@@ -42,15 +47,19 @@ function ensureOutputChain(audio: AudioContext) {
   compressor.release.setValueAtTime(0.16, audio.currentTime);
 
   masterBus = audio.createGain();
-  masterBus.gain.setValueAtTime(0.72, audio.currentTime);
+  masterBus.gain.setValueAtTime(0.72 * sfxVolume, audio.currentTime);
+
+  musicBus = audio.createGain();
+  musicBus.gain.setValueAtTime(0.26 * musicVolume, audio.currentTime);
 
   ambienceBus = audio.createGain();
-  ambienceBus.gain.setValueAtTime(0.12, audio.currentTime);
+  ambienceBus.gain.setValueAtTime(0.12 * sfxVolume, audio.currentTime);
 
   shortVerb = audio.createConvolver();
   shortVerb.buffer = makeImpulseBuffer(audio, 0.28, 1.7);
 
   masterBus.connect(compressor);
+  musicBus.connect(compressor);
   ambienceBus.connect(shortVerb);
   shortVerb.connect(compressor);
   compressor.connect(audio.destination);
@@ -83,6 +92,10 @@ function connectOutput(node: AudioNode, sendAmount = 0) {
     node.connect(send);
     send.connect(ambienceBus);
   }
+}
+
+function connectMusicOutput(node: AudioNode) {
+  if (musicBus) node.connect(musicBus);
 }
 
 function playTone(
@@ -153,11 +166,114 @@ function playChord(frequencies: number[], duration: number, volume: number, dela
   });
 }
 
+function createDistortionCurve(amount: number) {
+  const samples = 44100;
+  const curve = new Float32Array(samples);
+  const deg = Math.PI / 180;
+  for (let index = 0; index < samples; index += 1) {
+    const x = (index * 2) / samples - 1;
+    curve[index] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+  }
+  return curve;
+}
+
+function playDistortedTone(frequency: number, duration: number, volume: number, delay = 0, endFrequency?: number) {
+  const audio = resumeContext();
+  if (!audio) return;
+  const start = audio.currentTime + delay;
+  const oscillator = audio.createOscillator();
+  const shaper = audio.createWaveShaper();
+  const filter = audio.createBiquadFilter();
+  const gain = audio.createGain();
+  oscillator.type = 'sawtooth';
+  oscillator.frequency.setValueAtTime(frequency, start);
+  if (endFrequency) oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, endFrequency), start + duration);
+  shaper.curve = createDistortionCurve(520);
+  shaper.oversample = '4x';
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(780, start);
+  filter.frequency.exponentialRampToValueAtTime(210, start + duration);
+  filter.Q.setValueAtTime(1.9, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume), start + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  oscillator.connect(shaper);
+  shaper.connect(filter);
+  filter.connect(gain);
+  connectOutput(gain, 0.08);
+  oscillator.start(start);
+  oscillator.stop(start + duration + 0.04);
+}
+
+function playMusicStep() {
+  const audio = resumeContext();
+  if (!audio || musicVolume <= 0.001) return;
+  const start = audio.currentTime;
+  const bassNotes = [55, 55, 65.41, 73.42, 82.41, 73.42, 65.41, 49];
+  const leadNotes = [220, 246.94, 196, 293.66, 261.63, 196, 164.81, 146.83];
+  const step = musicStep % bassNotes.length;
+  const bass = audio.createOscillator();
+  const bassGain = audio.createGain();
+  const bassFilter = audio.createBiquadFilter();
+  bass.type = 'sawtooth';
+  bass.frequency.setValueAtTime(bassNotes[step], start);
+  bassFilter.type = 'lowpass';
+  bassFilter.frequency.setValueAtTime(210, start);
+  bassFilter.Q.setValueAtTime(0.9, start);
+  bassGain.gain.setValueAtTime(0.0001, start);
+  bassGain.gain.exponentialRampToValueAtTime(0.13, start + 0.018);
+  bassGain.gain.exponentialRampToValueAtTime(0.0001, start + 0.34);
+  bass.connect(bassFilter);
+  bassFilter.connect(bassGain);
+  connectMusicOutput(bassGain);
+  bass.start(start);
+  bass.stop(start + 0.38);
+
+  if (step % 2 === 1) {
+    const lead = audio.createOscillator();
+    const leadGain = audio.createGain();
+    lead.type = 'triangle';
+    lead.frequency.setValueAtTime(leadNotes[step], start + 0.035);
+    lead.frequency.exponentialRampToValueAtTime(leadNotes[step] * 0.985, start + 0.21);
+    leadGain.gain.setValueAtTime(0.0001, start + 0.035);
+    leadGain.gain.exponentialRampToValueAtTime(0.034, start + 0.055);
+    leadGain.gain.exponentialRampToValueAtTime(0.0001, start + 0.24);
+    lead.connect(leadGain);
+    connectMusicOutput(leadGain);
+    lead.start(start + 0.035);
+    lead.stop(start + 0.27);
+  }
+
+  musicStep += 1;
+}
+
 function scaledIntensity(intensity: number) {
   return Math.pow(Phaser.Math.Clamp(intensity / 45, 0.12, 1), 0.72);
 }
 
 export const gameAudio = {
+  setVolumes(settings: { musicVolume?: number; sfxVolume?: number }): void {
+    sfxVolume = Phaser.Math.Clamp(settings.sfxVolume ?? sfxVolume, 0, 1);
+    musicVolume = Phaser.Math.Clamp(settings.musicVolume ?? musicVolume, 0, 1);
+    if (!audioContext) return;
+    const audio = audioContext;
+    ensureOutputChain(audio);
+    masterBus?.gain.setTargetAtTime(0.72 * sfxVolume, audio.currentTime, 0.018);
+    ambienceBus?.gain.setTargetAtTime(0.12 * sfxVolume, audio.currentTime, 0.018);
+    musicBus?.gain.setTargetAtTime(0.26 * musicVolume, audio.currentTime, 0.035);
+  },
+
+  getSfxVolume(): number {
+    return sfxVolume;
+  },
+
+  startMusic(): void {
+    const audio = resumeContext();
+    if (!audio || musicTimer !== null) return;
+    playMusicStep();
+    musicTimer = window.setInterval(playMusicStep, 430);
+  },
+
   unlock(): void {
     try {
       const audio = resumeContext();
@@ -176,34 +292,41 @@ export const gameAudio = {
   },
 
   playUiClick(): void {
-    playTone(240, 0.045, 0.026, 'square', 0, 210);
-    playNoise(0.035, 0.012, 'highpass', 1400, 0.004, 0.7);
+    playTone(220, 0.032, 0.05, 'square', 0, 180);
+    playTone(720, 0.026, 0.024, 'triangle', 0.004, 1040);
+    playNoise(0.028, 0.032, 'highpass', 1800, 0, 0.9, 3600, 0.02);
   },
 
   playMenuSelect(): void {
-    playNoise(0.16, 0.024, 'bandpass', 420, 0, 1.1, 980, 0.08);
-    playChord([146.83, 220, 293.66], 0.18, 0.052, 0.018, 0.12);
-    playTone(587.33, 0.16, 0.018, 'triangle', 0.12, 440, 0.14);
+    playNoise(0.036, 0.046, 'highpass', 1600, 0, 0.85, 3200, 0.03);
+    playNoise(0.11, 0.056, 'bandpass', 420, 0.012, 1.15, 1180, 0.1);
+    playTone(73.42, 0.2, 0.056, 'triangle', 0.014, 52, 0.08);
+    playTone(146.83, 0.13, 0.03, 'sawtooth', 0.045, 98, 0.08);
+    playNoise(0.09, 0.022, 'lowpass', 220, 0.075, 0.6, 120);
   },
 
   playUiHover(): void {
-    playTone(620, 0.035, 0.008, 'sine', 0, 760, 0.03);
+    playTone(690, 0.034, 0.014, 'triangle', 0, 920, 0.035);
+    playNoise(0.018, 0.008, 'highpass', 2400, 0.004, 0.75);
   },
 
   playUiLocked(): void {
-    playNoise(0.09, 0.022, 'lowpass', 280, 0, 0.6, 170);
-    playTone(92, 0.12, 0.026, 'triangle', 0.01, 68);
+    playNoise(0.1, 0.034, 'lowpass', 280, 0, 0.65, 145);
+    playTone(82, 0.14, 0.04, 'triangle', 0.01, 58);
   },
 
   playWeaponToggle(opening: boolean): void {
     if (opening) {
-      playNoise(0.13, 0.026, 'bandpass', 520, 0, 1.4, 1160, 0.06);
-      playTone(196, 0.08, 0.024, 'square', 0.012, 294);
-      playTone(392, 0.11, 0.018, 'triangle', 0.042, 523, 0.08);
+      this.playUiClick();
+      playNoise(0.15, 0.05, 'bandpass', 520, 0.006, 1.7, 1460, 0.11);
+      playTone(98, 0.16, 0.04, 'sawtooth', 0.012, 73.42, 0.06);
+      playTone(196, 0.08, 0.038, 'square', 0.032, 392);
+      playTone(523.25, 0.13, 0.028, 'triangle', 0.07, 784, 0.12);
       return;
     }
-    playNoise(0.08, 0.016, 'bandpass', 620, 0, 1, 310);
-    playTone(330, 0.08, 0.018, 'triangle', 0.012, 196, 0.04);
+    playNoise(0.09, 0.038, 'bandpass', 760, 0, 1.35, 280, 0.08);
+    playTone(392, 0.07, 0.032, 'square', 0.006, 196, 0.04);
+    playTone(82, 0.12, 0.026, 'triangle', 0.035, 55);
   },
 
   playWeaponSelect(gearType: string): void {
@@ -238,13 +361,16 @@ export const gameAudio = {
 
   playUpgradeToggle(opening: boolean): void {
     if (opening) {
-      playTone(261.63, 0.07, 0.022, 'triangle', 0, 329.63);
-      playTone(392, 0.09, 0.018, 'sine', 0.035, 523.25, 0.08);
-      playNoise(0.1, 0.012, 'bandpass', 900, 0.01, 1.3, 1400);
+      this.playUiClick();
+      playTone(130.81, 0.1, 0.038, 'square', 0, 196);
+      playTone(261.63, 0.08, 0.032, 'triangle', 0.028, 392, 0.08);
+      playTone(659.25, 0.11, 0.022, 'sine', 0.07, 987.77, 0.12);
+      playNoise(0.12, 0.03, 'bandpass', 900, 0.012, 1.6, 1900, 0.08);
       return;
     }
-    playTone(392, 0.07, 0.016, 'triangle', 0, 261.63);
-    playNoise(0.06, 0.01, 'bandpass', 620, 0, 1, 360);
+    playNoise(0.075, 0.032, 'bandpass', 880, 0, 1.2, 340, 0.05);
+    playTone(523.25, 0.055, 0.026, 'square', 0, 261.63);
+    playTone(98, 0.1, 0.024, 'triangle', 0.028, 65.41);
   },
 
   playUpgradeBuy(): void {
@@ -327,22 +453,28 @@ function playProfileBreak(profileId: string, material: string, profile: typeof M
     return;
   }
   if (profileId === 'foldingTable' || profileId === 'garageShelf' || profileId === 'mysteryBox') {
-    playNoise(0.09, 0.04 + power * 0.04, 'bandpass', 760, 0, 1.2, 1250, 0.05);
-    playTone(118, 0.2, 0.034 + power * 0.048, 'triangle', 0.012, 82, 0.08);
-    playNoise(0.18, 0.018 + power * 0.028, 'lowpass', 360, 0.07, 0.7, 170);
+    playNoise(0.045, 0.07 + power * 0.052, 'bandpass', 920, 0, 1.85, 1650, 0.06);
+    playNoise(0.085, 0.052 + power * 0.048, 'highpass', 1450, 0.018, 1.35, 3100, 0.04);
+    playTone(92, 0.24, 0.044 + power * 0.054, 'triangle', 0.006, 58, 0.08);
+    playTone(184, 0.11, 0.026 + power * 0.026, 'square', 0.032, 121, 0.04);
+    playNoise(0.22, 0.026 + power * 0.036, 'lowpass', 410, 0.065, 0.75, 145);
     return;
   }
   if (profileId === 'oldTv') {
-    playNoise(0.16, 0.04 + power * 0.05, 'bandpass', 1250, 0, 1.1, 2600, 0.12);
-    playResonantHit(94, 0.24, 0.04 + power * 0.04, 0.015, 0.08);
-    playNoise(0.18, 0.02 + power * 0.034, 'highpass', 3600, 0.075, 1.7, 6800, 0.16);
-    playTone(1720, 0.18, 0.01 + power * 0.014, 'square', 0.115, 1240);
+    playNoise(0.035, 0.1 + power * 0.07, 'highpass', 2600, 0, 2.1, 9200, 0.18);
+    playNoise(0.055, 0.074 + power * 0.058, 'bandpass', 1320, 0.018, 1.6, 3600, 0.12);
+    playNoise(0.18, 0.038 + power * 0.05, 'highpass', 4200, 0.045, 1.8, 9800, 0.22);
+    playResonantHit(62, 0.36, 0.072 + power * 0.056, 0.012, 0.08);
+    playDistortedTone(96, 0.26, 0.046 + power * 0.038, 0.035, 42);
+    playTone(15720, 0.18, 0.006 + power * 0.01, 'sine', 0.075, 11200, 0.12);
     return;
   }
   if (profileId === 'speakerStack') {
-    playResonantHit(72, 0.32, 0.055 + power * 0.052, 0, 0.12);
-    playNoise(0.14, 0.026 + power * 0.034, 'bandpass', 540, 0.025, 0.9, 280, 0.08);
-    playTone(145, 0.24, 0.024 + power * 0.024, 'sine', 0.08, 68, 0.12);
+    playDistortedTone(58, 0.42, 0.082 + power * 0.07, 0, 31);
+    playNoise(0.16, 0.058 + power * 0.052, 'bandpass', 260, 0.018, 2.4, 95, 0.1);
+    playNoise(0.24, 0.034 + power * 0.046, 'lowpass', 190, 0.065, 0.95, 70);
+    playNoise(0.1, 0.024 + power * 0.034, 'highpass', 3600, 0.04, 1.2, 7600, 0.12);
+    playTone(118, 0.18, 0.03 + power * 0.024, 'square', 0.09, 59, 0.06);
     return;
   }
   if (profileId === 'paintCan' || profileId === 'cooler' || profileId === 'tinyDrumKit') {
