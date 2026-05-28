@@ -7,6 +7,7 @@ export type ScoreMode = 'wreckRoom' | 'damageRush';
 export type AudioSettings = {
   musicVolume: number;
   sfxVolume: number;
+  muted: boolean;
 };
 
 export type RoundSummary = {
@@ -32,7 +33,8 @@ type ModeStats = Record<ScoreMode, { cash: number; bestDamage: number }>;
 const AUDIO_SETTINGS_STORAGE_KEY = 'property-damage-audio-settings';
 const defaultAudioSettings: AudioSettings = {
   musicVolume: 0.42,
-  sfxVolume: 0.86
+  sfxVolume: 0.86,
+  muted: false
 };
 
 const initialModeStats: ModeStats = {
@@ -90,7 +92,8 @@ function loadAudioSettings(): AudioSettings {
     const parsed = JSON.parse(stored) as Partial<AudioSettings>;
     return {
       musicVolume: clampVolume(parsed.musicVolume, defaultAudioSettings.musicVolume),
-      sfxVolume: clampVolume(parsed.sfxVolume, defaultAudioSettings.sfxVolume)
+      sfxVolume: clampVolume(parsed.sfxVolume, defaultAudioSettings.sfxVolume),
+      muted: typeof parsed.muted === 'boolean' ? parsed.muted : defaultAudioSettings.muted
     };
   } catch {
     return defaultAudioSettings;
@@ -213,7 +216,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((state) => {
       const audioSettings = {
         musicVolume: clampVolume(settings.musicVolume, state.audioSettings.musicVolume),
-        sfxVolume: clampVolume(settings.sfxVolume, state.audioSettings.sfxVolume)
+        sfxVolume: clampVolume(settings.sfxVolume, state.audioSettings.sfxVolume),
+        muted: typeof settings.muted === 'boolean' ? settings.muted : state.audioSettings.muted
       };
       try {
         window.localStorage.setItem(AUDIO_SETTINGS_STORAGE_KEY, JSON.stringify(audioSettings));

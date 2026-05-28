@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { AudioManager } from './AudioManager';
+import { MATERIAL_AUDIO_PROFILES } from './materialAudioProfiles';
 import { MATERIAL_SFX_PROFILES } from './sfxProfiles';
 
 const MIN_MS_BETWEEN_BREAK_SOUNDS_BY_OBJECT = 120;
@@ -18,9 +20,45 @@ let shortVerb: ConvolverNode | null = null;
 let activeBreakSounds = 0;
 let sfxVolume = 0.86;
 let musicVolume = 0.42;
+let isMuted = false;
 let musicTimer: number | null = null;
 let musicStep = 0;
 const lastBreakSoundByProfile = new Map<string, number>();
+const sampleAudio = new AudioManager();
+
+function randomRange(min: number, max: number) {
+  return min + Math.random() * (max - min);
+}
+
+function getThrowIntensity(power: number) {
+  if (power < 0.35) return 'light';
+  if (power < 0.75) return 'medium';
+  return 'heavy';
+}
+
+function normalizedImpact(intensity: number) {
+  return Phaser.Math.Clamp(intensity / 45, 0.08, 1);
+}
+
+function selectImpactGroup(material: string, intensity: number, glancing = false) {
+  if (glancing) return 'impact.glancing';
+  const profile = MATERIAL_AUDIO_PROFILES[material] ?? MATERIAL_AUDIO_PROFILES.wood;
+  const velocity = normalizedImpact(intensity);
+  if (velocity < 0.35) return 'impact.generic.light';
+  if (velocity < 0.75) return profile.impactGroup;
+  return 'impact.generic.heavy';
+}
+
+function buildPlaybackParams(material: string, intensity: number) {
+  const profile = MATERIAL_AUDIO_PROFILES[material] ?? MATERIAL_AUDIO_PROFILES.wood;
+  const velocity = normalizedImpact(intensity);
+  return {
+    profile,
+    velocity,
+    volume: profile.volumeBase * randomRange(0.88, 1.08) * (0.55 + velocity * 0.65),
+    pitch: profile.pitchBase + randomRange(-profile.pitchVariance, profile.pitchVariance)
+  };
+}
 
 function getAudioContext() {
   const AudioContextClass = window.AudioContext || (window as WebAudioWindow).webkitAudioContext;
@@ -47,13 +85,13 @@ function ensureOutputChain(audio: AudioContext) {
   compressor.release.setValueAtTime(0.16, audio.currentTime);
 
   masterBus = audio.createGain();
-  masterBus.gain.setValueAtTime(0.72 * sfxVolume, audio.currentTime);
+  masterBus.gain.setValueAtTime(isMuted ? 0 : 0.72 * sfxVolume, audio.currentTime);
 
   musicBus = audio.createGain();
-  musicBus.gain.setValueAtTime(0.26 * musicVolume, audio.currentTime);
+  musicBus.gain.setValueAtTime(isMuted ? 0 : 0.26 * musicVolume, audio.currentTime);
 
   ambienceBus = audio.createGain();
-  ambienceBus.gain.setValueAtTime(0.12 * sfxVolume, audio.currentTime);
+  ambienceBus.gain.setValueAtTime(isMuted ? 0 : 0.12 * sfxVolume, audio.currentTime);
 
   shortVerb = audio.createConvolver();
   shortVerb.buffer = makeImpulseBuffer(audio, 0.28, 1.7);
@@ -252,15 +290,18 @@ function scaledIntensity(intensity: number) {
 }
 
 export const gameAudio = {
-  setVolumes(settings: { musicVolume?: number; sfxVolume?: number }): void {
+  setVolumes(settings: { musicVolume?: number; sfxVolume?: number; muted?: boolean }): void {
     sfxVolume = Phaser.Math.Clamp(settings.sfxVolume ?? sfxVolume, 0, 1);
     musicVolume = Phaser.Math.Clamp(settings.musicVolume ?? musicVolume, 0, 1);
+    isMuted = settings.muted ?? isMuted;
+    sampleAudio.setMasterVolume(sfxVolume);
+    sampleAudio.setMuted(isMuted);
     if (!audioContext) return;
     const audio = audioContext;
     ensureOutputChain(audio);
-    masterBus?.gain.setTargetAtTime(0.72 * sfxVolume, audio.currentTime, 0.018);
-    ambienceBus?.gain.setTargetAtTime(0.12 * sfxVolume, audio.currentTime, 0.018);
-    musicBus?.gain.setTargetAtTime(0.26 * musicVolume, audio.currentTime, 0.035);
+    masterBus?.gain.setTargetAtTime(isMuted ? 0 : 0.72 * sfxVolume, audio.currentTime, 0.018);
+    ambienceBus?.gain.setTargetAtTime(isMuted ? 0 : 0.12 * sfxVolume, audio.currentTime, 0.018);
+    musicBus?.gain.setTargetAtTime(isMuted ? 0 : 0.26 * musicVolume, audio.currentTime, 0.035);
   },
 
   getSfxVolume(): number {
@@ -276,6 +317,22 @@ export const gameAudio = {
 
   unlock(): void {
     try {
+      sampleAudio.unlock();
+      void sampleAudio.preload([
+        'ui.button.hover',
+        'ui.button.click',
+        'ui.button.confirm',
+        'ui.button.cancel',
+        'throw.release.light',
+        'throw.release.medium',
+        'throw.release.heavy',
+        'throw.whoosh.light',
+        'throw.whoosh.medium',
+        'throw.whoosh.heavy',
+        'impact.generic.light',
+        'impact.generic.medium',
+        'impact.generic.heavy'
+      ]);
       const audio = resumeContext();
       if (!audio) return;
       const gain = audio.createGain();
@@ -294,25 +351,23 @@ export const gameAudio = {
   playUiClick(): void {
     playTone(220, 0.032, 0.05, 'square', 0, 180);
     playTone(720, 0.026, 0.024, 'triangle', 0.004, 1040);
-    playNoise(0.028, 0.032, 'highpass', 1800, 0, 0.9, 3600, 0.02);
+    playTone(1440, 0.018, 0.012, 'sine', 0.01, 1180, 0.02);
   },
 
   playMenuSelect(): void {
-    playNoise(0.036, 0.046, 'highpass', 1600, 0, 0.85, 3200, 0.03);
-    playNoise(0.11, 0.056, 'bandpass', 420, 0.012, 1.15, 1180, 0.1);
     playTone(73.42, 0.2, 0.056, 'triangle', 0.014, 52, 0.08);
     playTone(146.83, 0.13, 0.03, 'sawtooth', 0.045, 98, 0.08);
-    playNoise(0.09, 0.022, 'lowpass', 220, 0.075, 0.6, 120);
+    playTone(293.66, 0.08, 0.024, 'square', 0.082, 392, 0.06);
   },
 
   playUiHover(): void {
     playTone(690, 0.034, 0.014, 'triangle', 0, 920, 0.035);
-    playNoise(0.018, 0.008, 'highpass', 2400, 0.004, 0.75);
+    playTone(1380, 0.018, 0.006, 'sine', 0.006, 1620, 0.02);
   },
 
   playUiLocked(): void {
-    playNoise(0.1, 0.034, 'lowpass', 280, 0, 0.65, 145);
     playTone(82, 0.14, 0.04, 'triangle', 0.01, 58);
+    playTone(164, 0.08, 0.018, 'square', 0.018, 96);
   },
 
   playWeaponToggle(opening: boolean): void {
@@ -381,6 +436,11 @@ export const gameAudio = {
 
   playThrowWindup(charge: number): void {
     const power = Phaser.Math.Clamp(charge, 0.08, 1);
+    sampleAudio.playGroup(power > 0.8 ? 'throw.charge.high' : 'throw.charge.low', {
+      volume: 0.18 + power * 0.22,
+      pitch: 0.88 + power * 0.22
+    });
+    if (power >= 0.98) sampleAudio.playGroup('throw.maxPower', { volume: 0.72, pitch: randomRange(0.96, 1.04), delayMs: 12 });
     playNoise(0.18, 0.018 + power * 0.032, 'bandpass', 180 + power * 380, 0, 0.75, 320 + power * 980);
     playTone(82 + power * 116, 0.14, 0.012 + power * 0.02, 'sawtooth', 0, 110 + power * 220, 0.05);
   },
@@ -388,6 +448,18 @@ export const gameAudio = {
   playThrowRelease(charge: number, gearType: string): void {
     const power = Phaser.Math.Clamp(charge, 0.12, 1);
     const weight = gearType === 'amp' ? 1.25 : gearType === 'cymbal' ? 0.82 : 1;
+    const intensity = getThrowIntensity(power);
+    sampleAudio.playGroup(`throw.release.${intensity}`, {
+      volume: (0.55 + power * 0.38) * weight,
+      pitch: 0.94 + power * 0.1,
+      bus: 'throw'
+    });
+    sampleAudio.playGroup(`throw.whoosh.${intensity}`, {
+      volume: 0.45 + power * 0.44,
+      pitch: 0.92 + power * 0.14,
+      delayMs: 18,
+      bus: 'throw'
+    });
     playNoise(0.26, 0.04 * power * weight, 'bandpass', 430 + power * 900, 0, 0.9, 1300 + power * 1800, 0.06);
     playTone(130 * weight, 0.13, 0.024 * power, 'triangle', 0.018, 85 * weight, 0.06);
     if (gearType === 'guitar') playChord([146.83, 196, 246.94], 0.12, 0.028 * power, 0.055, 0.08);
@@ -399,6 +471,12 @@ export const gameAudio = {
     if (intensity < IMPACT_SOUND_THRESHOLD) return;
     const profile = MATERIAL_SFX_PROFILES[material] ?? MATERIAL_SFX_PROFILES.wood;
     const power = scaledIntensity(intensity);
+    const sampleParams = buildPlaybackParams(material, intensity);
+    sampleAudio.playGroup(selectImpactGroup(material, intensity), {
+      volume: sampleParams.volume * 0.52,
+      pitch: sampleParams.pitch,
+      bus: 'impact'
+    });
     if (material === 'glass') {
       playNoise(0.12 + power * 0.08, 0.014 + power * 0.032, 'highpass', 2400, 0, 1.4, 5200, 0.12);
       playTone(1760, 0.12, 0.008 + power * 0.016, 'sine', 0.02, 1340, 0.16);
@@ -435,7 +513,63 @@ export const gameAudio = {
 
     const profile = MATERIAL_SFX_PROFILES[material] ?? MATERIAL_SFX_PROFILES.wood;
     const power = scaledIntensity(intensity);
+    const sampleParams = buildPlaybackParams(material, intensity);
+    sampleAudio.playGroup(sampleParams.profile.impactGroup, {
+      volume: sampleParams.volume * 0.6,
+      pitch: sampleParams.pitch,
+      bus: 'impact'
+    });
+    sampleAudio.playGroup(sampleParams.profile.breakGroup, {
+      volume: sampleParams.volume,
+      pitch: sampleParams.pitch,
+      delayMs: 14,
+      bus: 'break'
+    });
+    const [minDebris, maxDebris] = sampleParams.profile.debrisCount;
+    const debrisCount = Math.round(minDebris + (maxDebris - minDebris) * sampleParams.velocity);
+    for (let index = 0; index < debrisCount; index += 1) {
+      sampleAudio.playGroup(index % 3 === 1 && sampleParams.profile.secondaryDebrisGroup ? sampleParams.profile.secondaryDebrisGroup : sampleParams.profile.debrisGroup, {
+        volume: sampleParams.volume * randomRange(0.32, 0.68),
+        pitch: sampleParams.pitch + randomRange(-0.08, 0.08),
+        delayMs: randomRange(25, 190),
+        bus: 'debris'
+      });
+    }
+    if (Math.random() < sampleParams.profile.subHitChance && sampleParams.velocity > 0.62) {
+      sampleAudio.playGroup('sweetener.subHit', { volume: 0.24 + sampleParams.velocity * 0.24, pitch: randomRange(0.86, 1.02), delayMs: 5, bus: 'sweetener' });
+    }
+    if (sampleParams.profile.sweetenerGroup && Math.random() < 0.46 && sampleParams.velocity > 0.45) {
+      sampleAudio.playGroup(sampleParams.profile.sweetenerGroup, { volume: 0.36, pitch: randomRange(0.88, 1.16), delayMs: 65, bus: 'sweetener' });
+    }
+    if (sampleParams.velocity > 0.82) {
+      sampleAudio.playGroup('sweetener.maxPowerHit', { volume: 0.22, pitch: randomRange(0.9, 1.04), delayMs: 22, bus: 'sweetener' });
+    }
     playProfileBreak(profileId, material, profile, power);
+  },
+
+  playAudioGroup(group: string, velocity = 0.75): void {
+    sampleAudio.playGroup(group, {
+      volume: 0.55 + Phaser.Math.Clamp(velocity, 0, 1) * 0.42,
+      pitch: randomRange(0.92, 1.08)
+    });
+  },
+
+  playSampleBreak(material: string, velocity = 0.85): void {
+    const scaled = Phaser.Math.Clamp(velocity, 0, 1) * 45;
+    const { profile, volume, pitch } = buildPlaybackParams(material, scaled);
+    sampleAudio.playGroup(profile.impactGroup, { volume: volume * 0.6, pitch });
+    sampleAudio.playGroup(profile.breakGroup, { volume, pitch, delayMs: 15 });
+    for (let index = 0; index < Math.round(2 + velocity * 5); index += 1) {
+      sampleAudio.playGroup(profile.debrisGroup, { volume: volume * randomRange(0.3, 0.65), pitch: pitch + randomRange(-0.08, 0.08), delayMs: randomRange(25, 180) });
+    }
+  },
+
+  getAudioGroups(): string[] {
+    return sampleAudio.getGroups();
+  },
+
+  getLastAudioFile(): string {
+    return sampleAudio.getLastPlayed();
   }
 };
 

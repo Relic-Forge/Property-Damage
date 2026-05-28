@@ -270,6 +270,11 @@ export default function App() {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [audioDebugGroup, setAudioDebugGroup] = useState('break.glass');
+  const [audioDebugVelocity, setAudioDebugVelocity] = useState(0.82);
+  const [audioDebugMaterial, setAudioDebugMaterial] = useState('glass');
+  const [audioGroups, setAudioGroups] = useState<string[]>([]);
+  const [lastAuditionFile, setLastAuditionFile] = useState('');
   const settingsPausedSceneRef = useRef(false);
   const lastReportSoundRef = useRef<string | null>(null);
   const titleState = mode !== 'menu' && (roundState === 'ready' || roundState === 'launched' || roundState === 'settling') ? 'is-fading' : '';
@@ -384,6 +389,8 @@ export default function App() {
 
   const openPauseMenu = useCallback(() => {
     if (mode === 'menu' || roundState === 'selecting' || roundState === 'countdown' || roundState === 'summary') return;
+    window.dispatchEvent(new CustomEvent('pd:close-stage-menus', { detail: { source: 'pause' } }));
+    setIsSettingsOpen(false);
     setIsPaused(true);
     setScenePaused(true);
   }, [mode, roundState, setScenePaused]);
@@ -394,6 +401,7 @@ export default function App() {
   }, [setScenePaused]);
 
   const openSettings = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('pd:close-stage-menus', { detail: { source: 'settings' } }));
     gameAudio.unlock();
     gameAudio.playUiClick();
     gameAudio.startMusic();
@@ -457,6 +465,12 @@ export default function App() {
   }, [audioSettings]);
 
   useEffect(() => {
+    if (!isSettingsOpen || !import.meta.env.DEV) return;
+    gameAudio.unlock();
+    window.setTimeout(() => setAudioGroups(gameAudio.getAudioGroups()), 160);
+  }, [isSettingsOpen]);
+
+  useEffect(() => {
     const handleHotkey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
       const target = event.target as HTMLElement | null;
@@ -485,6 +499,8 @@ export default function App() {
         }
         return;
       }
+
+      if (isPaused && event.code !== 'KeyM' && event.code !== 'Escape' && event.code !== 'KeyS') return;
 
       if (event.code.startsWith('Digit')) {
         const index = Number(event.code.slice(5)) - 1;
@@ -623,7 +639,7 @@ export default function App() {
             )}
           </div>
         )}
-        {mode !== 'menu' && isPaused && (
+        {mode !== 'menu' && isPaused && !isSettingsOpen && (
           <div className="pause-overlay" role="dialog" aria-label="Paused menu">
             <div className="pause-card">
               <p className="eyebrow">Paused</p>
@@ -671,7 +687,94 @@ export default function App() {
                     onChange={(event) => setAudioSettings({ sfxVolume: Number(event.currentTarget.value) / 100 })}
                   />
                 </label>
+                <label className="mute-control">
+                  <span>
+                    <strong>Mute Audio</strong>
+                    <em>{audioSettings.muted ? 'On' : 'Off'}</em>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={audioSettings.muted}
+                    onChange={(event) => setAudioSettings({ muted: event.currentTarget.checked })}
+                  />
+                </label>
               </div>
+              {import.meta.env.DEV && (
+                <div className="audio-audition-panel">
+                  <div className="audio-audition-grid">
+                    <label>
+                      <span>Group</span>
+                      <select value={audioDebugGroup} onChange={(event) => setAudioDebugGroup(event.currentTarget.value)}>
+                        {(audioGroups.length ? audioGroups : [audioDebugGroup]).map((group) => (
+                          <option key={group} value={group}>{group}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Material</span>
+                      <select value={audioDebugMaterial} onChange={(event) => setAudioDebugMaterial(event.currentTarget.value)}>
+                        {['glass', 'ceramic', 'wood', 'plastic', 'metal', 'electronics', 'cake'].map((material) => (
+                          <option key={material} value={material}>{material}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Velocity {Math.round(audioDebugVelocity * 100)}%</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={Math.round(audioDebugVelocity * 100)}
+                        onChange={(event) => setAudioDebugVelocity(Number(event.currentTarget.value) / 100)}
+                      />
+                    </label>
+                  </div>
+                  <div className="audio-audition-actions">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        gameAudio.unlock();
+                        gameAudio.playAudioGroup(audioDebugGroup, audioDebugVelocity);
+                        window.setTimeout(() => setLastAuditionFile(gameAudio.getLastAudioFile()), 80);
+                      }}
+                    >
+                      Play
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        gameAudio.unlock();
+                        for (let index = 0; index < 10; index += 1) {
+                          window.setTimeout(() => gameAudio.playAudioGroup(audioDebugGroup, audioDebugVelocity), index * 55);
+                        }
+                        window.setTimeout(() => setLastAuditionFile(gameAudio.getLastAudioFile()), 680);
+                      }}
+                    >
+                      Rapid 10
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        gameAudio.unlock();
+                        gameAudio.playSampleBreak(audioDebugMaterial, audioDebugVelocity);
+                        window.setTimeout(() => setLastAuditionFile(gameAudio.getLastAudioFile()), 260);
+                      }}
+                    >
+                      Break
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        gameAudio.unlock();
+                        window.setTimeout(() => setAudioGroups(gameAudio.getAudioGroups()), 160);
+                      }}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                  <p className="audio-audition-file">{lastAuditionFile || 'No audition file yet'}</p>
+                </div>
+              )}
               <div className="settings-actions">
                 <button type="button" onClick={closeSettings}>Done</button>
               </div>

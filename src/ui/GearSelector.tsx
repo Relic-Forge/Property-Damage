@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { gameAudio } from '../game/audio/gameAudio';
 import { assetPath } from '../game/assetPath';
 import { GearType, useGameStore } from '../store/gameStore';
@@ -56,6 +56,16 @@ export function GearSelector() {
   const roundState = useGameStore((state) => state.roundState);
   const isLocked = roundState !== 'ready';
 
+  const toggleOpen = useCallback(() => {
+    setIsOpen((open) => {
+      const nextOpen = !open;
+      if (nextOpen) {
+        window.dispatchEvent(new CustomEvent('pd:close-stage-menus', { detail: { source: 'weapons' } }));
+      }
+      return nextOpen;
+    });
+  }, []);
+
   useEffect(() => {
     const toggle = () => {
       gameAudio.unlock();
@@ -64,11 +74,20 @@ export function GearSelector() {
         return;
       }
       gameAudio.playWeaponToggle(!isOpen);
-      setIsOpen((open) => !open);
+      toggleOpen();
     };
     window.addEventListener('pd:toggle-weapons', toggle);
     return () => window.removeEventListener('pd:toggle-weapons', toggle);
-  }, [isLocked, isOpen]);
+  }, [isLocked, isOpen, toggleOpen]);
+
+  useEffect(() => {
+    const close = (event: Event) => {
+      const source = (event as CustomEvent<{ source?: string }>).detail?.source;
+      if (source !== 'weapons') setIsOpen(false);
+    };
+    window.addEventListener('pd:close-stage-menus', close);
+    return () => window.removeEventListener('pd:close-stage-menus', close);
+  }, []);
 
   return (
     <section className={`stage-menu weapon-menu ${isOpen ? 'is-open' : 'is-collapsed'}`}>
@@ -124,7 +143,7 @@ export function GearSelector() {
             if (isLocked) gameAudio.playUiLocked();
             else {
               gameAudio.playWeaponToggle(!isOpen);
-              setIsOpen((open) => !open);
+              toggleOpen();
             }
           }}
         >

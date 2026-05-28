@@ -135,6 +135,7 @@ export class DamageRushScene extends Phaser.Scene {
   private previewTextureKey: string | null = null;
   private isDragging = false;
   private dragAnchor: Phaser.Math.Vector2 | null = null;
+  private lastChargeAudioAt = 0;
   private wasAimAtMax = false;
   private maxChargeBurstStartedAt = Number.NEGATIVE_INFINITY;
   private releaseAim: AimReleaseState | null = null;
@@ -362,6 +363,7 @@ export class DamageRushScene extends Phaser.Scene {
     this.dragAnchor = point.clone();
     this.releaseAim = null;
     this.wasAimAtMax = false;
+    this.lastChargeAudioAt = 0;
     gameAudio.playThrowWindup(0.08);
     this.setPerformerPose('pull');
     this.updateReadyGearPreview();
@@ -372,7 +374,12 @@ export class DamageRushScene extends Phaser.Scene {
   private moveDrag(point: Phaser.Math.Vector2) {
     if (!this.isDragging) return;
     const pull = this.getDragPull(point);
-    this.positionHeldGearForCharge(pull.length() / MAX_PULL_DISTANCE);
+    const charge = pull.length() / MAX_PULL_DISTANCE;
+    if (this.time.now - this.lastChargeAudioAt > 150) {
+      this.lastChargeAudioAt = this.time.now;
+      gameAudio.playThrowWindup(charge);
+    }
+    this.positionHeldGearForCharge(charge);
     this.drawAim(point);
   }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { gameAudio } from '../game/audio/gameAudio';
 import { getUpgradeCost, UpgradeKeyType, useGameStore } from '../store/gameStore';
 
@@ -12,21 +12,41 @@ const upgrades: Array<{ key: UpgradeKeyType; label: string; effect: string; note
 
 export function UpgradePanel() {
   const [isOpen, setIsOpen] = useState(false);
+  const [purchasedKey, setPurchasedKey] = useState<UpgradeKeyType | null>(null);
   const cash = useGameStore((state) => state.cash);
   const levels = useGameStore((state) => state.upgrades);
   const roundState = useGameStore((state) => state.roundState);
   const buyUpgrade = useGameStore((state) => state.buyUpgrade);
   const upgradesLocked = ['countdown', 'launched', 'settling'].includes(roundState);
 
+  const toggleOpen = useCallback(() => {
+    setIsOpen((open) => {
+      const nextOpen = !open;
+      if (nextOpen) {
+        window.dispatchEvent(new CustomEvent('pd:close-stage-menus', { detail: { source: 'upgrades' } }));
+      }
+      return nextOpen;
+    });
+  }, []);
+
   useEffect(() => {
     const toggle = () => {
       gameAudio.unlock();
       gameAudio.playUpgradeToggle(!isOpen);
-      setIsOpen((open) => !open);
+      toggleOpen();
     };
     window.addEventListener('pd:toggle-upgrades', toggle);
     return () => window.removeEventListener('pd:toggle-upgrades', toggle);
-  }, [isOpen]);
+  }, [isOpen, toggleOpen]);
+
+  useEffect(() => {
+    const close = (event: Event) => {
+      const source = (event as CustomEvent<{ source?: string }>).detail?.source;
+      if (source !== 'upgrades') setIsOpen(false);
+    };
+    window.addEventListener('pd:close-stage-menus', close);
+    return () => window.removeEventListener('pd:close-stage-menus', close);
+  }, []);
 
   return (
     <section className={`stage-menu upgrade-menu ${isOpen ? 'is-open menu-pop-open' : 'is-collapsed'}`}>
@@ -38,7 +58,7 @@ export function UpgradePanel() {
         onClick={() => {
           gameAudio.unlock();
           gameAudio.playUpgradeToggle(!isOpen);
-          setIsOpen((open) => !open);
+          toggleOpen();
         }}
       >
         <span className="trigger-mark trigger-mark-mods" aria-hidden="true">
@@ -66,11 +86,12 @@ export function UpgradePanel() {
             const level = levels[upgrade.key];
             const cost = getUpgradeCost(upgrade.key, level);
             const canBuy = !upgradesLocked && cash >= cost;
+            const isShort = !upgradesLocked && cash < cost;
             return (
               <button
                 key={upgrade.key}
                 type="button"
-                className={`upgrade-row ${canBuy ? '' : 'is-locked'}`}
+                className={`upgrade-row ${canBuy ? 'is-affordable' : ''} ${isShort ? 'is-short' : ''} ${upgradesLocked ? 'is-locked' : ''} ${purchasedKey === upgrade.key ? 'is-purchased' : ''}`}
                 aria-disabled={!canBuy}
                 onPointerEnter={() => {
                   if (canBuy) gameAudio.playUiHover();
@@ -83,18 +104,21 @@ export function UpgradePanel() {
                   }
                   gameAudio.playUpgradeBuy();
                   buyUpgrade(upgrade.key);
+                  setPurchasedKey(upgrade.key);
+                  window.setTimeout(() => setPurchasedKey((current) => (current === upgrade.key ? null : current)), 850);
                 }}
               >
                 <span className="upgrade-card-top">
                   <span className="upgrade-mark">{upgrade.symbol}</span>
-                  <span className="upgrade-level">L{level}</span>
+                  {level > 0 && <span className="upgrade-level">+{level}</span>}
+                  {purchasedKey === upgrade.key && <span className="upgrade-bought">Bought</span>}
                 </span>
                 <span className="upgrade-copy">
                   <strong>{upgrade.label}</strong>
                   <em>{upgrade.effect}</em>
                   <small>{upgrade.note}</small>
                 </span>
-                <b>${cost.toLocaleString()}</b>
+                <b>{isShort ? `Need $${cost.toLocaleString()}` : `$${cost.toLocaleString()}`}</b>
               </button>
             );
           })}
