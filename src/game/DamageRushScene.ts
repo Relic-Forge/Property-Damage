@@ -1,8 +1,12 @@
 import Phaser from 'phaser';
 import { GearType, RoundSummary, useGameStore } from '../store/gameStore';
+import { gameAudio } from './audio/gameAudio';
 import { assetPath } from './assetPath';
+import { destroyGeneratedFragment } from './destruction/breakCleanup';
+import { breakObject as runBreakPipeline } from './destruction/breakEffectPipeline';
+import { BreakMaterial } from './destruction/breakTypes';
 
-type RushDebrisKind = 'glass' | 'wood' | 'metal' | 'soft' | 'electronics' | 'cake';
+type RushDebrisKind = BreakMaterial;
 type RushPropKind =
   | 'cakeCart'
   | 'printer'
@@ -28,6 +32,7 @@ type RushPropConfig = {
   bounciness: number;
   fragility: number;
   debrisKind: RushDebrisKind;
+  breakProfileId?: string;
   bonusTag?: 'fragile' | 'heavy' | 'topHeavy' | 'tinyTarget' | 'electronics' | 'party';
 };
 
@@ -60,14 +65,14 @@ const GEAR: Record<GearType, GearConfig> = {
 };
 
 const RUSH_PROPS: RushPropConfig[] = [
-  { kind: 'cakeCart', label: 'Questionable Cake', textureKey: 'prop-questionable-cake', assetPath: '/assets/garage-band/props-raster/questionable_cake_intact.png', width: 124, height: 122, mass: 34, health: 45, value: 880, speed: 2.35, wobble: 0.035, bounciness: 0.38, fragility: 1.18, debrisKind: 'cake', bonusTag: 'party' },
-  { kind: 'printer', label: 'Old TV', textureKey: 'prop-old-tv', assetPath: '/assets/garage-band/props-raster/old_tv_intact.png', width: 142, height: 132, mass: 58, health: 62, value: 620, speed: 2.05, bounciness: 0.24, fragility: 0.82, debrisKind: 'electronics', bonusTag: 'electronics' },
-  { kind: 'glassTable', label: 'Neon Sign', textureKey: 'prop-neon-sign', assetPath: '/assets/garage-band/props-raster/neon_sign_intact.png', width: 214, height: 70, mass: 22, health: 26, value: 960, speed: 2.85, bounciness: 0.58, fragility: 1.75, debrisKind: 'glass', bonusTag: 'fragile' },
-  { kind: 'foldingChairStack', label: 'Folding Table', textureKey: 'prop-folding-table', assetPath: '/assets/garage-band/props-raster/folding_table_intact.png', width: 196, height: 78, mass: 36, health: 48, value: 560, speed: 2.38, wobble: 0.028, bounciness: 0.42, fragility: 1.0, debrisKind: 'metal' },
-  { kind: 'rollingTvStand', label: 'Garage Shelf', textureKey: 'prop-garage-shelf', assetPath: '/assets/garage-band/props-raster/garage_shelf_intact.png', width: 230, height: 86, mass: 70, health: 72, value: 1040, speed: 1.88, wobble: 0.018, bounciness: 0.22, fragility: 0.78, debrisKind: 'electronics', bonusTag: 'heavy' },
-  { kind: 'podium', label: 'Mystery Box', textureKey: 'prop-mystery-box', assetPath: '/assets/garage-band/props-raster/mystery_box_intact.png', width: 106, height: 106, mass: 42, health: 52, value: 600, speed: 2.32, bounciness: 0.34, fragility: 0.96, debrisKind: 'wood' },
-  { kind: 'speakerTower', label: 'Speaker Stack', textureKey: 'prop-speaker-stack', assetPath: '/assets/garage-band/props-raster/speaker_stack_intact.png', width: 92, height: 178, mass: 62, health: 68, value: 980, speed: 2.02, wobble: 0.042, bounciness: 0.28, fragility: 0.9, debrisKind: 'electronics', bonusTag: 'topHeavy' },
-  { kind: 'expensiveVase', label: 'Paint Can', textureKey: 'prop-paint-can', assetPath: '/assets/garage-band/props-raster/paint_can_intact.png', width: 78, height: 84, mass: 14, health: 18, value: 1250, speed: 3.15, wobble: 0.065, bounciness: 0.62, fragility: 2.1, debrisKind: 'glass', bonusTag: 'tinyTarget' }
+  { kind: 'cakeCart', label: 'Questionable Cake', textureKey: 'prop-questionable-cake', assetPath: '/assets/garage-band/props-raster/questionable_cake_intact.png', width: 124, height: 122, mass: 34, health: 45, value: 880, speed: 2.35, wobble: 0.035, bounciness: 0.38, fragility: 1.18, debrisKind: 'cake', breakProfileId: 'questionableCake', bonusTag: 'party' },
+  { kind: 'printer', label: 'Old TV', textureKey: 'prop-old-tv', assetPath: '/assets/garage-band/props-raster/old_tv_intact.png', width: 142, height: 132, mass: 58, health: 62, value: 620, speed: 2.05, bounciness: 0.24, fragility: 0.82, debrisKind: 'electronics', breakProfileId: 'oldTv', bonusTag: 'electronics' },
+  { kind: 'glassTable', label: 'Neon Sign', textureKey: 'prop-neon-sign', assetPath: '/assets/garage-band/props-raster/neon_sign_intact.png', width: 214, height: 70, mass: 22, health: 26, value: 960, speed: 2.85, bounciness: 0.58, fragility: 1.75, debrisKind: 'glass', breakProfileId: 'neonSign', bonusTag: 'fragile' },
+  { kind: 'foldingChairStack', label: 'Folding Table', textureKey: 'prop-folding-table', assetPath: '/assets/garage-band/props-raster/folding_table_intact.png', width: 196, height: 78, mass: 36, health: 48, value: 560, speed: 2.38, wobble: 0.028, bounciness: 0.42, fragility: 1.0, debrisKind: 'wood', breakProfileId: 'foldingTable' },
+  { kind: 'rollingTvStand', label: 'Garage Shelf', textureKey: 'prop-garage-shelf', assetPath: '/assets/garage-band/props-raster/garage_shelf_intact.png', width: 230, height: 86, mass: 70, health: 72, value: 1040, speed: 1.88, wobble: 0.018, bounciness: 0.22, fragility: 0.78, debrisKind: 'wood', breakProfileId: 'garageShelf', bonusTag: 'heavy' },
+  { kind: 'podium', label: 'Mystery Box', textureKey: 'prop-mystery-box', assetPath: '/assets/garage-band/props-raster/mystery_box_intact.png', width: 106, height: 106, mass: 42, health: 52, value: 600, speed: 2.32, bounciness: 0.34, fragility: 0.96, debrisKind: 'wood', breakProfileId: 'mysteryBox' },
+  { kind: 'speakerTower', label: 'Speaker Stack', textureKey: 'prop-speaker-stack', assetPath: '/assets/garage-band/props-raster/speaker_stack_intact.png', width: 92, height: 178, mass: 62, health: 68, value: 980, speed: 2.02, wobble: 0.042, bounciness: 0.28, fragility: 0.9, debrisKind: 'electronics', breakProfileId: 'speakerStack', bonusTag: 'topHeavy' },
+  { kind: 'expensiveVase', label: 'Paint Can', textureKey: 'prop-paint-can', assetPath: '/assets/garage-band/props-raster/paint_can_intact.png', width: 78, height: 84, mass: 14, health: 18, value: 1250, speed: 3.15, wobble: 0.065, bounciness: 0.62, fragility: 2.1, debrisKind: 'metal', breakProfileId: 'paintCan', bonusTag: 'tinyTarget' }
 ];
 
 const ROUND_DURATION_SECONDS = 30;
@@ -180,6 +185,8 @@ export class DamageRushScene extends Phaser.Scene {
     this.loadSvgOnce('debris-metal-1', '/assets/garage-band/debris/metal_chunk_01.svg', { width: 50, height: 36 });
     this.loadSvgOnce('debris-fabric-1', '/assets/garage-band/debris/fabric_scrap_01.svg', { width: 54, height: 38 });
     this.loadSvgOnce('effect-impact-star', '/assets/garage-band/effects/impact_star.svg', { width: 92, height: 92 });
+    this.loadSvgOnce('effect-dust-puff', '/assets/garage-band/effects/dust_puff.svg', { width: 84, height: 84 });
+    this.loadSvgOnce('effect-spark', '/assets/garage-band/effects/spark_01.svg', { width: 64, height: 64 });
     this.loadSvgOnce('effect-smoke-puff', '/assets/garage-band/effects/smoke_puff.svg', { width: 96, height: 96 });
     RUSH_PROPS.forEach((prop) => {
       this.loadImageOnce(prop.textureKey, prop.assetPath);
@@ -318,7 +325,7 @@ export class DamageRushScene extends Phaser.Scene {
     this.activeGear = null;
     this.thrownGearPile.forEach((gear) => gear.destroy());
     this.activeProps.forEach((prop) => prop.destroy());
-    this.debris.forEach((piece) => piece.destroy());
+    this.debris.forEach((piece) => destroyGeneratedFragment(piece));
     this.thrownGearPile = [];
     this.activeProps = [];
     this.debris = [];
@@ -344,11 +351,13 @@ export class DamageRushScene extends Phaser.Scene {
   }
 
   private beginDrag(point: Phaser.Math.Vector2) {
+    gameAudio.unlock();
     if (useGameStore.getState().roundState !== 'ready' || this.time.now < this.reloadUntil) return;
     this.isDragging = true;
     this.dragAnchor = point.clone();
     this.releaseAim = null;
     this.wasAimAtMax = false;
+    gameAudio.playThrowWindup(0.08);
     this.setPerformerPose('pull');
     this.updateReadyGearPreview();
     this.positionHeldGearForCharge(0);
@@ -377,11 +386,14 @@ export class DamageRushScene extends Phaser.Scene {
       return;
     }
     this.startAimReleaseFade(rawPull, pull);
+    gameAudio.playThrowRelease(this.getPullCharge(rawPull), useGameStore.getState().selectedGear);
     this.animatePerformerThrow(pull);
   }
 
   private quickLaunch() {
     if (useGameStore.getState().roundState !== 'ready' || this.time.now < this.reloadUntil) return;
+    gameAudio.unlock();
+    gameAudio.playThrowRelease(0.9, useGameStore.getState().selectedGear);
     this.setPerformerPose('pull');
     this.positionHeldGearForCharge(0.9);
     this.animatePerformerThrow(new Phaser.Math.Vector2(Phaser.Math.Between(295, 350), Phaser.Math.Between(-120, -45)));
@@ -480,6 +492,7 @@ export class DamageRushScene extends Phaser.Scene {
           this.fogBurst(prop.x, prop.y);
         }
         if (config.behavior === 'ricochet' && relativeSpeed > 2) this.cymbalPing(prop.x, prop.y, prop);
+        gameAudio.playImpact(meta.debrisKind, impactValue);
         if (!meta.cleared && meta.healthLeft <= 0) this.clearProp(prop, meta, impactValue, gearType);
       });
     });
@@ -501,7 +514,24 @@ export class DamageRushScene extends Phaser.Scene {
     this.rushClearedCount += 1;
     this.rushCashEarned += Math.floor(score * 0.12);
     this.rushFansEarned += Math.max(1, Math.floor(score / 350));
-    this.spawnDebris(prop.x, prop.y, meta.debrisKind, meta.bonusTag === 'fragile' ? 9 : 6);
+    const gear = this.activeGear ?? this.thrownGearPile[this.thrownGearPile.length - 1];
+    const gearBody = gear?.body as MatterJS.BodyType | undefined;
+    const fragments = runBreakPipeline({
+      scene: this,
+      source: prop,
+      sourceTextureKey: prop.texture.key,
+      objectId: meta.id,
+      label: meta.label,
+      material: meta.debrisKind,
+      profileId: meta.breakProfileId,
+      width: prop.displayWidth,
+      height: prop.displayHeight,
+      impactPoint: new Phaser.Math.Vector2(prop.x, prop.y),
+      impactVelocity: new Phaser.Math.Vector2(gearBody?.velocity.x ?? prop.body?.velocity.x ?? 0, gearBody?.velocity.y ?? prop.body?.velocity.y ?? 0),
+      impactStrength: impactValue,
+      seed: this.time.now + Math.floor(prop.x * 19) + Math.floor(prop.y * 23)
+    });
+    this.debris.push(...fragments);
     this.createFloatingText(prop.x, prop.y - 30, this.getImpactLabel(score, meta, gearType));
     this.cameras.main.shake(Math.min(250, 60 + impactValue * 8), Math.min(0.018, 0.003 + impactValue / 800));
     useGameStore.getState().updateLiveRound(this.rushScore, this.rushClearedCount + this.rushEscapedCount, this.rushCombo);
@@ -652,6 +682,7 @@ export class DamageRushScene extends Phaser.Scene {
 
   private triggerMaxChargeBurst() {
     this.maxChargeBurstStartedAt = this.time.now;
+    gameAudio.playThrowWindup(1);
     this.performer?.setAngle(-9);
     this.tweens.add({
       targets: this.performer,
@@ -1004,32 +1035,6 @@ export class DamageRushScene extends Phaser.Scene {
       const angularVelocity = ((gear.body as any).angularVelocity ?? 0) as number;
       gear.setAngularVelocity(Phaser.Math.Clamp(angularVelocity + Phaser.Math.FloatBetween(-0.08, 0.08), -0.22, 0.22));
     });
-  }
-
-  private spawnDebris(x: number, y: number, kind: RushDebrisKind, count: number) {
-    const textureMap: Record<RushDebrisKind, string[]> = {
-      glass: ['debris-glass-1'],
-      wood: ['debris-wood-1', 'debris-wood-2'],
-      metal: ['debris-metal-1'],
-      soft: ['debris-fabric-1'],
-      electronics: ['debris-metal-1', 'debris-glass-1'],
-      cake: ['debris-fabric-1', 'debris-wood-1']
-    };
-    for (let i = 0; i < count; i += 1) {
-      const piece = this.matter.add.image(x + Phaser.Math.Between(-16, 16), y + Phaser.Math.Between(-16, 16), Phaser.Utils.Array.GetRandom(textureMap[kind]), undefined, {
-        restitution: 0.55,
-        friction: 0.75
-      });
-      piece.setScale(Phaser.Math.FloatBetween(0.6, 1.25));
-      piece.setVelocity(Phaser.Math.FloatBetween(-5, 5), Phaser.Math.FloatBetween(-6, -1));
-      piece.setAngularVelocity(Phaser.Math.FloatBetween(-0.24, 0.24));
-      piece.setMass(Phaser.Math.FloatBetween(2, 6));
-      this.debris.push(piece);
-      this.trackDelayedCall(5500, () => {
-        piece.destroy();
-        this.debris = this.debris.filter((item) => item !== piece);
-      });
-    }
   }
 
   private createHud() {

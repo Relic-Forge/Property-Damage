@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { gameAudio } from '../game/audio/gameAudio';
 
 type MainMenuProps = {
   onSelectWreckRoom: () => void;
@@ -63,7 +64,8 @@ export function MainMenu({ onSelectWreckRoom, onSelectDamageRush }: MainMenuProp
   const selectMode = (choice: MenuChoice) => {
     if (selected) return;
     setSelected(choice);
-    playMenuSelect();
+    gameAudio.unlock();
+    gameAudio.playMenuSelect();
     selectTimeoutRef.current = window.setTimeout(() => {
       selectTimeoutRef.current = null;
       callbacks[choice]();
@@ -157,6 +159,7 @@ export function MainMenu({ onSelectWreckRoom, onSelectDamageRush }: MainMenuProp
                 className={`mode-button ${selected === option.key ? 'is-selected' : ''}`}
                 disabled={Boolean(selected)}
                 aria-describedby={`${option.key}-description`}
+                onPointerEnter={() => gameAudio.playUiHover()}
                 onClick={() => selectMode(option.key)}
               >
                 <strong>{option.title}</strong>
@@ -170,34 +173,4 @@ export function MainMenu({ onSelectWreckRoom, onSelectDamageRush }: MainMenuProp
       </section>
     </div>
   );
-}
-
-function playMenuSelect() {
-  try {
-    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const audio = new AudioContextClass();
-    const gain = audio.createGain();
-    const first = audio.createOscillator();
-    const second = audio.createOscillator();
-    gain.connect(audio.destination);
-    gain.gain.setValueAtTime(0.0001, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.08, audio.currentTime + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.22);
-    first.type = 'square';
-    second.type = 'triangle';
-    first.frequency.setValueAtTime(220, audio.currentTime);
-    first.frequency.exponentialRampToValueAtTime(330, audio.currentTime + 0.11);
-    second.frequency.setValueAtTime(440, audio.currentTime + 0.04);
-    second.frequency.exponentialRampToValueAtTime(660, audio.currentTime + 0.18);
-    first.connect(gain);
-    second.connect(gain);
-    first.start();
-    second.start(audio.currentTime + 0.04);
-    first.stop(audio.currentTime + 0.2);
-    second.stop(audio.currentTime + 0.22);
-    window.setTimeout(() => void audio.close(), 260);
-  } catch {
-    // Browsers can block audio startup; the menu still transitions cleanly.
-  }
 }

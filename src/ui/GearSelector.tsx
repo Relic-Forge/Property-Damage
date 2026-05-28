@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { gameAudio } from '../game/audio/gameAudio';
 import { assetPath } from '../game/assetPath';
 import { GearType, useGameStore } from '../store/gameStore';
 
@@ -57,11 +58,17 @@ export function GearSelector() {
 
   useEffect(() => {
     const toggle = () => {
-      if (!isLocked) setIsOpen((open) => !open);
+      gameAudio.unlock();
+      if (isLocked) {
+        gameAudio.playUiLocked();
+        return;
+      }
+      gameAudio.playWeaponToggle(!isOpen);
+      setIsOpen((open) => !open);
     };
     window.addEventListener('pd:toggle-weapons', toggle);
     return () => window.removeEventListener('pd:toggle-weapons', toggle);
-  }, [isLocked]);
+  }, [isLocked, isOpen]);
 
   return (
     <section className={`stage-menu weapon-menu ${isOpen ? 'is-open' : 'is-collapsed'}`}>
@@ -76,8 +83,17 @@ export function GearSelector() {
               type="button"
               key={item.key}
               className={`weapon-card ${selectedGear === item.key ? 'is-selected' : ''}`}
-              disabled={isLocked}
+              aria-disabled={isLocked}
+              onPointerEnter={() => {
+                if (!isLocked) gameAudio.playUiHover();
+              }}
               onClick={() => {
+                gameAudio.unlock();
+                if (isLocked) {
+                  gameAudio.playUiLocked();
+                  return;
+                }
+                gameAudio.playWeaponSelect(item.key);
                 selectGear(item.key);
                 setIsOpen(false);
               }}
@@ -99,8 +115,18 @@ export function GearSelector() {
           type="button"
           className="menu-trigger weapon-trigger"
           aria-expanded={isOpen}
-          disabled={isLocked}
-          onClick={() => setIsOpen((open) => !open)}
+          aria-disabled={isLocked}
+          onPointerEnter={() => {
+            if (!isLocked) gameAudio.playUiHover();
+          }}
+          onClick={() => {
+            gameAudio.unlock();
+            if (isLocked) gameAudio.playUiLocked();
+            else {
+              gameAudio.playWeaponToggle(!isOpen);
+              setIsOpen((open) => !open);
+            }
+          }}
         >
           <span className="trigger-mark trigger-mark-objects" aria-hidden="true">
             <svg viewBox="0 0 32 32" focusable="false">

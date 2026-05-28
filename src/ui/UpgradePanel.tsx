@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { gameAudio } from '../game/audio/gameAudio';
 import { getUpgradeCost, UpgradeKeyType, useGameStore } from '../store/gameStore';
 
 const upgrades: Array<{ key: UpgradeKeyType; label: string; effect: string; note: string; symbol: string }> = [
@@ -18,10 +19,14 @@ export function UpgradePanel() {
   const upgradesLocked = ['countdown', 'launched', 'settling'].includes(roundState);
 
   useEffect(() => {
-    const toggle = () => setIsOpen((open) => !open);
+    const toggle = () => {
+      gameAudio.unlock();
+      gameAudio.playUpgradeToggle(!isOpen);
+      setIsOpen((open) => !open);
+    };
     window.addEventListener('pd:toggle-upgrades', toggle);
     return () => window.removeEventListener('pd:toggle-upgrades', toggle);
-  }, []);
+  }, [isOpen]);
 
   return (
     <section className={`stage-menu upgrade-menu ${isOpen ? 'is-open menu-pop-open' : 'is-collapsed'}`}>
@@ -29,7 +34,12 @@ export function UpgradePanel() {
         type="button"
         className="menu-trigger upgrade-trigger"
         aria-expanded={isOpen}
-        onClick={() => setIsOpen((open) => !open)}
+        onPointerEnter={() => gameAudio.playUiHover()}
+        onClick={() => {
+          gameAudio.unlock();
+          gameAudio.playUpgradeToggle(!isOpen);
+          setIsOpen((open) => !open);
+        }}
       >
         <span className="trigger-mark trigger-mark-mods" aria-hidden="true">
           <svg viewBox="0 0 32 32" focusable="false">
@@ -61,8 +71,19 @@ export function UpgradePanel() {
                 key={upgrade.key}
                 type="button"
                 className={`upgrade-row ${canBuy ? '' : 'is-locked'}`}
-                disabled={!canBuy}
-                onClick={() => buyUpgrade(upgrade.key)}
+                aria-disabled={!canBuy}
+                onPointerEnter={() => {
+                  if (canBuy) gameAudio.playUiHover();
+                }}
+                onClick={() => {
+                  gameAudio.unlock();
+                  if (!canBuy) {
+                    gameAudio.playUiLocked();
+                    return;
+                  }
+                  gameAudio.playUpgradeBuy();
+                  buyUpgrade(upgrade.key);
+                }}
               >
                 <span className="upgrade-card-top">
                   <span className="upgrade-mark">{upgrade.symbol}</span>
