@@ -83,6 +83,9 @@ const SPAWN_X = 1480;
 const FLOOR_Y = 694;
 const LAUNCHER = new Phaser.Math.Vector2(118, 575);
 const MAX_PULL_DISTANCE = 340;
+const PULL_POWER_EXPONENT = 2.2;
+const AIM_RELEASE_FADE_MS = 980;
+const AIM_MAX_BURST_MS = 180;
 const LAUNCH_VELOCITY_DIVISOR = 10.4;
 const PERFORMER_SCALE = 0.32;
 const PERFORMER_POSE_SCALE: Record<PerformerPose, number> = {
@@ -92,12 +95,18 @@ const PERFORMER_POSE_SCALE: Record<PerformerPose, number> = {
   recover: PERFORMER_SCALE * 1.24
 };
 const AIM_THEME = {
-  shadow: 0x19161f,
-  warm: 0xffe17d,
-  hot: 0xff5c8a,
-  cool: 0x5de0e6
+  haze: 0x5de0e6,
+  accent: 0xa98cff,
+  core: 0xe8fdff
 };
 type PerformerPose = 'idle' | 'pull' | 'throw' | 'recover';
+type AimReleaseState = {
+  points: Phaser.Math.Vector2[];
+  charge: number;
+  startedAt: number;
+  wind: Phaser.Math.Vector2;
+  seed: number;
+};
 
 export class DamageRushScene extends Phaser.Scene {
   private aimLine!: Phaser.GameObjects.Graphics;
@@ -120,6 +129,9 @@ export class DamageRushScene extends Phaser.Scene {
   private previewTextureKey: string | null = null;
   private isDragging = false;
   private dragAnchor: Phaser.Math.Vector2 | null = null;
+  private wasAimAtMax = false;
+  private maxChargeBurstStartedAt = Number.NEGATIVE_INFINITY;
+  private releaseAim: AimReleaseState | null = null;
   private reloadUntil = 0;
   private roundStartedAt = 0;
   private nextSpawnAt = 0;
@@ -241,6 +253,7 @@ export class DamageRushScene extends Phaser.Scene {
   }
 
   update(time: number) {
+    this.updateAimReleaseFade();
     if (this.roundOver) return;
     if (!this.isRoundArmed || ['selecting', 'countdown'].includes(useGameStore.getState().roundState)) {
       this.updateHud(ROUND_DURATION_SECONDS, time);
@@ -281,6 +294,8 @@ export class DamageRushScene extends Phaser.Scene {
     this.roundOver = false;
     this.isRoundArmed = false;
     this.isDragging = false;
+    this.releaseAim = null;
+    this.wasAimAtMax = false;
     this.reloadUntil = 0;
     this.roundStartedAt = this.time.now;
     this.nextSpawnAt = Number.POSITIVE_INFINITY;
@@ -297,6 +312,8 @@ export class DamageRushScene extends Phaser.Scene {
     this.launchHitIds.clear();
     this.fogBurstUsed = false;
     this.dragAnchor = null;
+    this.releaseAim = null;
+    this.wasAimAtMax = false;
     this.activeGear?.destroy();
     this.activeGear = null;
     this.thrownGearPile.forEach((gear) => gear.destroy());
@@ -330,6 +347,8 @@ export class DamageRushScene extends Phaser.Scene {
     if (useGameStore.getState().roundState !== 'ready' || this.time.now < this.reloadUntil) return;
     this.isDragging = true;
     this.dragAnchor = point.clone();
+    this.releaseAim = null;
+    this.wasAimAtMax = false;
     this.setPerformerPose('pull');
     this.updateReadyGearPreview();
     this.positionHeldGearForCharge(0);
@@ -346,15 +365,18 @@ export class DamageRushScene extends Phaser.Scene {
   private endDrag(point: Phaser.Math.Vector2) {
     if (!this.isDragging) return;
     this.isDragging = false;
+    const rawPull = this.getRawDragPull(point);
     const pull = this.getDragPull(point);
     this.dragAnchor = null;
-    this.aimLine.clear();
-    if (pull.length() < 18) {
+    if (rawPull.length() < 18) {
+      this.releaseAim = null;
+      this.wasAimAtMax = false;
+      this.aimLine.clear();
       this.setPerformerPose('idle');
       this.updateReadyGearPreview();
       return;
     }
-    pull.limit(MAX_PULL_DISTANCE);
+    this.startAimReleaseFade(rawPull, pull);
     this.animatePerformerThrow(pull);
   }
 
@@ -568,22 +590,21 @@ export class DamageRushScene extends Phaser.Scene {
 
   private drawAim(point: Phaser.Math.Vector2) {
     this.aimLine.clear();
-    const pull = this.getDragPull(point);
-    const charge = Phaser.Math.Clamp(pull.length() / MAX_PULL_DISTANCE, 0, 1);
-    const hand = this.getHeldGearPoint('pull');
-    this.aimLine.lineStyle(8, AIM_THEME.shadow, 0.28);
-    this.aimLine.lineBetween(hand.x, hand.y + 28, point.x, point.y);
-    this.aimLine.lineStyle(4 + charge * 2, AIM_THEME.hot, 0.48 + charge * 0.36);
-    this.aimLine.lineBetween(hand.x, hand.y + 28, point.x, point.y);
-    this.aimLine.lineStyle(2, AIM_THEME.cool, 0.48 + charge * 0.28);
-    this.aimLine.lineBetween(hand.x + 16, hand.y + 24, point.x, point.y);
-    this.aimLine.fillStyle(AIM_THEME.warm, 0.48 + charge * 0.28);
-    for (let i = 1; i <= 10; i += 1) {
-      const t = i / 10;
-      const x = LAUNCHER.x + pull.x * Phaser.Math.Linear(1.7, 2.2, charge) * t;
-      const y = LAUNCHER.y - 34 + pull.y * Phaser.Math.Linear(1.7, 2.2, charge) * t + Phaser.Math.Linear(140, 178, charge) * t * t;
-      this.aimLine.fillCircle(x, y, Math.max(2.2, 5.8 - i * 0.24 + charge));
-    }
+    const rawPull = this.getRawDragPull(point);
+    const pull = this.getEffectivePull(rawPull);
+    const charge = this.getPullCharge(rawPull);
+    const source = this.getHeldGearPoint('throw');
+    const arc = this.getAimArcPoints(source, pull, charge, 16, 2.02, 178);
+    const atMax = rawPull.length() >= MAX_PULL_DISTANCE;
+    if (atMax && !this.wasAimAtMax) this.triggerMaxChargeBurst();
+    this.wasAimAtMax = atMax;
+    const pulse = Math.max(this.getMaxChargePulse(), atMax ? 0.42 : 0);
+
+    this.drawVaporGlow(arc, charge, 1, pulse);
+    this.drawVaporCore(arc, charge, 1, pulse);
+    this.drawVaporMotes(arc, charge, 1, pulse);
+    this.drawArcFlow(arc, charge, pulse);
+    this.drawSourceVaporPlume(source, pull, charge, pulse);
   }
 
   private clampPointerPoint(point: Phaser.Math.Vector2) {
@@ -591,8 +612,250 @@ export class DamageRushScene extends Phaser.Scene {
   }
 
   private getDragPull(point: Phaser.Math.Vector2) {
+    return this.getEffectivePull(this.getRawDragPull(point));
+  }
+
+  private getRawDragPull(point: Phaser.Math.Vector2) {
     const anchor = this.dragAnchor ?? LAUNCHER;
-    return new Phaser.Math.Vector2(anchor.x - point.x, anchor.y - point.y).limit(MAX_PULL_DISTANCE);
+    return new Phaser.Math.Vector2(anchor.x - point.x, anchor.y - point.y);
+  }
+
+  private getPullCharge(rawPull: Phaser.Math.Vector2) {
+    return Phaser.Math.Clamp(rawPull.length() / MAX_PULL_DISTANCE, 0, 1);
+  }
+
+  private getEffectivePull(rawPull: Phaser.Math.Vector2) {
+    const distance = rawPull.length();
+    if (distance <= 0) return new Phaser.Math.Vector2(0, 0);
+    const charge = this.getPullCharge(rawPull);
+    const pullStrength = 1 - Math.pow(1 - charge, PULL_POWER_EXPONENT);
+    return rawPull.clone().normalize().scale(pullStrength * MAX_PULL_DISTANCE);
+  }
+
+  private getAimArcPoints(origin: Phaser.Math.Vector2, pull: Phaser.Math.Vector2, charge: number, steps: number, reach: number, gravity: number) {
+    const points: Phaser.Math.Vector2[] = [];
+    const distanceScale = Phaser.Math.Linear(1.28, reach, charge);
+    const gravityScale = Phaser.Math.Linear(gravity * 0.58, gravity, charge);
+    for (let i = 0; i <= steps; i += 1) {
+      const t = i / steps;
+      points.push(new Phaser.Math.Vector2(
+        origin.x + pull.x * distanceScale * t,
+        origin.y + pull.y * distanceScale * t + gravityScale * t * t
+      ));
+    }
+    return points;
+  }
+
+  private getAimDefinition(charge: number) {
+    return Math.pow(Phaser.Math.Clamp(charge, 0, 1), 1.2);
+  }
+
+  private triggerMaxChargeBurst() {
+    this.maxChargeBurstStartedAt = this.time.now;
+    this.performer?.setAngle(-9);
+    this.tweens.add({
+      targets: this.performer,
+      angle: -7,
+      duration: 130,
+      ease: 'Sine.easeOut'
+    });
+  }
+
+  private getMaxChargePulse() {
+    const elapsed = this.time.now - this.maxChargeBurstStartedAt;
+    if (elapsed < 0 || elapsed > AIM_MAX_BURST_MS) return 0;
+    const t = elapsed / AIM_MAX_BURST_MS;
+    return Math.sin(t * Math.PI);
+  }
+
+  private startAimReleaseFade(rawPull: Phaser.Math.Vector2, pull: Phaser.Math.Vector2) {
+    const source = this.getHeldGearPoint('throw');
+    const angle = Math.atan2(pull.y, pull.x);
+    this.releaseAim = {
+      points: this.getAimArcPoints(source, pull, this.getPullCharge(rawPull), 16, 2.02, 178),
+      charge: this.getPullCharge(rawPull),
+      startedAt: this.time.now,
+      wind: this.getReleaseWindVector(angle),
+      seed: this.time.now * 0.017 + angle * 31
+    };
+    this.wasAimAtMax = false;
+    this.renderAimReleaseFade(0);
+  }
+
+  private updateAimReleaseFade() {
+    if (!this.releaseAim || this.isDragging) return;
+    const t = Phaser.Math.Clamp((this.time.now - this.releaseAim.startedAt) / AIM_RELEASE_FADE_MS, 0, 1);
+    if (t >= 1) {
+      this.releaseAim = null;
+      this.aimLine.clear();
+      return;
+    }
+    this.renderAimReleaseFade(t);
+  }
+
+  private renderAimReleaseFade(t: number) {
+    if (!this.releaseAim) return;
+    const coreFade = Math.pow(1 - t, 3.2);
+    const hazeFade = Math.pow(1 - t, 1.05);
+    const wind = Phaser.Math.Easing.Cubic.Out(t);
+    const collapsedPoints = this.getWindBlownAimPoints(this.releaseAim.points, wind);
+    this.aimLine.clear();
+    this.drawVaporGlow(collapsedPoints, this.releaseAim.charge, hazeFade * 0.86, 0, wind * 0.7);
+    if (t < 0.38) this.drawVaporCore(collapsedPoints, this.releaseAim.charge, coreFade, 0, wind * 0.8);
+    this.drawReleaseVaporCloud(collapsedPoints, this.releaseAim.charge, hazeFade, wind);
+  }
+
+  private getReleaseWindVector(angle: number) {
+    const along = new Phaser.Math.Vector2(Math.cos(angle), Math.sin(angle)).scale(0.42);
+    const cross = new Phaser.Math.Vector2(Math.cos(angle - Math.PI / 2), Math.sin(angle - Math.PI / 2)).scale(0.72);
+    return along.add(cross).add(new Phaser.Math.Vector2(0.52, -0.42)).normalize();
+  }
+
+  private getWindBlownAimPoints(points: Phaser.Math.Vector2[], wind: number) {
+    const origin = points[0];
+    const release = this.releaseAim;
+    const windVector = release?.wind ?? new Phaser.Math.Vector2(1, -0.35);
+    const seed = release?.seed ?? 0;
+    return points.map((point, index) => {
+      const t = index / Math.max(1, points.length - 1);
+      const shear = wind * Phaser.Math.Linear(0.1, 1, t);
+      const gust = Math.sin(seed + index * 1.43 + wind * 7.2) * 15 * wind;
+      const curl = Math.cos(seed * 0.7 + index * 2.18 + wind * 5.4) * 11 * wind;
+      return new Phaser.Math.Vector2(
+        Phaser.Math.Linear(point.x, origin.x + (point.x - origin.x) * 0.5, shear) + windVector.x * shear * 72 + gust,
+        Phaser.Math.Linear(point.y, point.y - 14 - t * 34, wind) + windVector.y * shear * 52 + curl * 0.35
+      );
+    });
+  }
+
+  private drawVaporGlow(points: Phaser.Math.Vector2[], charge: number, fadeMultiplier = 1, pulse = 0, collapse = 0) {
+    const definition = this.getAimDefinition(charge);
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const fade = 1 - i / (points.length - 1);
+      const width = Phaser.Math.Linear(10, 26, definition) * (1 + pulse * 0.16) * (1 - collapse * 0.32);
+      const alpha = (0.028 + definition * 0.13 + pulse * 0.08) * fade * fadeMultiplier;
+      this.aimLine.lineStyle(Math.max(2, width - i * 0.32), AIM_THEME.haze, alpha);
+      this.aimLine.lineBetween(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+      this.aimLine.lineStyle(Math.max(1, width * 0.52 - i * 0.22), AIM_THEME.accent, alpha * Phaser.Math.Linear(0.18, 0.52, definition));
+      this.aimLine.lineBetween(points[i].x, points[i].y + 2, points[i + 1].x, points[i + 1].y + 2);
+    }
+  }
+
+  private drawVaporCore(points: Phaser.Math.Vector2[], charge: number, fadeMultiplier = 1, pulse = 0, collapse = 0) {
+    const definition = this.getAimDefinition(charge);
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const fade = Math.pow(1 - i / (points.length - 1), 1.34);
+      const width = Phaser.Math.Linear(0.8, 4.2, definition) * (1 + pulse * 0.28) * (1 - collapse * 0.42);
+      const alpha = Phaser.Math.Linear(0.08, 0.82, definition) + pulse * 0.16;
+      this.aimLine.lineStyle(Math.max(0.6, width), AIM_THEME.core, alpha * fade * fadeMultiplier);
+      this.aimLine.lineBetween(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+    }
+  }
+
+  private drawVaporMotes(points: Phaser.Math.Vector2[], charge: number, fadeMultiplier = 1, pulse = 0, collapse = 0) {
+    const definition = this.getAimDefinition(charge);
+    for (let i = 2; i < points.length - 2; i += 3) {
+      const point = points[i];
+      const next = points[i + 1];
+      const angle = Phaser.Math.Angle.Between(point.x, point.y, next.x, next.y);
+      const normal = angle - Math.PI / 2;
+      const drift = Math.sin(i * 1.91 + this.time.now * 0.008) * Phaser.Math.Linear(5, 16, definition);
+      const lift = 3 + i * 0.5 + collapse * 17;
+      const fade = 1 - i / points.length;
+      const alpha = (0.035 + definition * 0.16 + pulse * 0.05) * fade * fadeMultiplier;
+      const x = point.x + Math.cos(normal) * drift;
+      const y = point.y + Math.sin(normal) * drift - lift;
+      const streak = Phaser.Math.Linear(5, 12, definition) * fade * (1 + collapse * 0.45);
+      const width = Phaser.Math.Linear(0.7, 1.7, definition) * fade;
+      this.aimLine.lineStyle(Math.max(0.55, width), i % 2 === 0 ? AIM_THEME.haze : AIM_THEME.core, alpha);
+      this.aimLine.lineBetween(
+        x - Math.cos(angle) * streak * 0.32,
+        y - Math.sin(angle) * streak * 0.32,
+        x + Math.cos(angle) * streak,
+        y + Math.sin(angle) * streak - collapse * 2
+      );
+    }
+  }
+
+  private drawArcFlow(points: Phaser.Math.Vector2[], charge: number, pulse: number) {
+    const definition = this.getAimDefinition(charge);
+    if (definition < 0.45 && pulse <= 0) return;
+    const flowHead = (this.time.now * 0.0048) % 1;
+    for (let i = 1; i < points.length - 2; i += 1) {
+      const position = i / (points.length - 1);
+      const wave = 1 - Phaser.Math.Clamp(Math.abs(position - flowHead) / 0.18, 0, 1);
+      const alpha = (wave * definition * 0.22 + pulse * 0.26) * Math.pow(1 - position, 1.4);
+      if (alpha <= 0.01) continue;
+      this.aimLine.lineStyle(1.1 + definition * 1.3, AIM_THEME.core, alpha);
+      this.aimLine.lineBetween(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+    }
+  }
+
+  private drawReleaseVaporCloud(points: Phaser.Math.Vector2[], charge: number, fadeMultiplier: number, wind: number) {
+    const definition = this.getAimDefinition(charge);
+    const release = this.releaseAim;
+    const windVector = release?.wind ?? new Phaser.Math.Vector2(1, -0.35);
+    const seed = release?.seed ?? 0;
+    for (let i = 1; i < points.length - 1; i += 1) {
+      const point = points[i];
+      const pathFade = Math.pow(1 - i / points.length, 0.8);
+      const tangent = i < points.length - 2
+        ? Phaser.Math.Angle.Between(point.x, point.y, points[i + 1].x, points[i + 1].y)
+        : Math.atan2(windVector.y, windVector.x);
+      const normal = tangent - Math.PI / 2;
+      const particleCount = 3 + Math.round(definition * 2);
+      for (let j = 0; j < particleCount; j += 1) {
+        const noiseA = Math.sin(seed + i * 8.91 + j * 13.37 + wind * 7.6);
+        const noiseB = Math.cos(seed * 0.83 + i * 5.47 + j * 17.11 + wind * 9.3);
+        const plume = wind * Phaser.Math.Linear(17, 72, pathFade) + j * 5;
+        const scatter = Phaser.Math.Linear(4, 23, wind) * (0.35 + definition) * noiseA;
+        const x = point.x + windVector.x * plume + Math.cos(normal) * scatter + noiseB * 7 * wind;
+        const y = point.y + windVector.y * plume + Math.sin(normal) * scatter - wind * (7 + j * 2.3) + noiseA * 4;
+        const direction = Math.atan2(windVector.y, windVector.x) + noiseB * 0.5 + tangent * 0.15;
+        const length = Phaser.Math.Linear(6, 21, definition) * pathFade * (0.65 + wind * 1.05) * (0.75 + j * 0.16);
+        const width = Phaser.Math.Linear(0.45, 2.05, definition) * pathFade * (1 - wind * 0.18);
+        const alpha = (0.035 + definition * 0.095) * fadeMultiplier * pathFade * (1 - wind * 0.25) * (0.72 + Math.abs(noiseA) * 0.55);
+        if (alpha <= 0.004) continue;
+        const color = j === 0 && i % 4 === 0 ? AIM_THEME.core : i % 3 === 0 ? AIM_THEME.accent : AIM_THEME.haze;
+        this.aimLine.lineStyle(Math.max(0.4, width), color, alpha);
+        this.aimLine.lineBetween(
+          x - Math.cos(direction) * length * 0.35,
+          y - Math.sin(direction) * length * 0.35,
+          x + Math.cos(direction) * length,
+          y + Math.sin(direction) * length
+        );
+        if (j === 0 && i % 2 === 0) {
+          this.aimLine.fillStyle(AIM_THEME.core, alpha * 0.45);
+          this.aimLine.fillRect(x, y, 1.2, 1.2);
+        }
+      }
+    }
+  }
+
+  private drawSourceVaporPlume(source: Phaser.Math.Vector2, pull: Phaser.Math.Vector2, charge: number, pulse: number) {
+    const definition = this.getAimDefinition(charge);
+    if (definition <= 0.02) return;
+    const angle = Math.atan2(pull.y, pull.x);
+    const back = new Phaser.Math.Vector2(-Math.cos(angle), -Math.sin(angle));
+    const normal = new Phaser.Math.Vector2(Math.cos(angle - Math.PI / 2), Math.sin(angle - Math.PI / 2));
+    const time = this.time.now * 0.007;
+    const count = 9;
+    for (let i = 0; i < count; i += 1) {
+      const offset = i - (count - 1) / 2;
+      const breathe = Math.sin(time + i * 1.73) * 3.5;
+      const x = source.x + back.x * (4 + i * 2.4) + normal.x * (offset * 3.4 + breathe);
+      const y = source.y + back.y * (4 + i * 2.4) + normal.y * (offset * 3.4 + breathe) - i * 1.4;
+      const length = Phaser.Math.Linear(7, 18, definition) * (1 - Math.abs(offset) / 6.4) * (1 + pulse * 0.2);
+      const alpha = (0.045 + definition * 0.12 + pulse * 0.04) * (1 - Math.abs(offset) / 6.1);
+      const direction = angle + Math.sin(time * 0.8 + i * 2.1) * 0.35;
+      this.aimLine.lineStyle(Phaser.Math.Linear(0.55, 2.0, definition), i % 3 === 0 ? AIM_THEME.core : AIM_THEME.haze, alpha);
+      this.aimLine.lineBetween(
+        x - Math.cos(direction) * length * 0.25,
+        y - Math.sin(direction) * length * 0.25,
+        x + Math.cos(direction) * length,
+        y + Math.sin(direction) * length
+      );
+    }
   }
 
   private createPerformer() {
